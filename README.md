@@ -250,3 +250,4 @@ sudo -u hotticket test -w /opt/hot-ticket-bot/data
 ```
 
 Если sync не создаёт билеты, запустите ручную команду из раздела «Первый ручной sync» и проверьте `sync_runs` в SQLite. Ошибка одной пары source не останавливает обработку остальных пар.
+# hot-ticket-telegram-bot
