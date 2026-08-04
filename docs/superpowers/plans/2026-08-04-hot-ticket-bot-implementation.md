@@ -22,6 +22,9 @@
 - У пользователя может быть не более 20 активных подписок.
 - История уведомлений создаётся только после успешной отправки Telegram-сообщения.
 - Первоначальный источник синхронизации — `TAS` и `UZS`.
+- Базовый URL Aviasales читается из единственной настройки `AVIASALES_EXPLORE_BASE_URL`.
+- Ошибка одной активной пары sync source не останавливает обработку остальных пар.
+- Sync endpoint не принимает origin, currency или произвольный внешний URL из HTTP-запроса.
 
 ---
 
@@ -33,6 +36,7 @@ tsconfig.json                             строгая проверка TypeSc
 eslint.config.js                          правила ESLint без any
 vitest.config.ts                          конфигурация unit/integration тестов
 scripts/build-telegram.mjs                сборка и проверка deploy-модулей
+src/config.ts                             единая конфигурация приложения
 src/domain/errors.ts                      типизированные ошибки
 src/domain/codes.ts                       origin/destination/currency
 src/domain/ticket.ts                      модель билета и идентичность
@@ -40,7 +44,8 @@ src/domain/subscription.ts                модель и matching подпис�
 src/domain/dates.ts                       календарные даты и диапазоны
 src/domain/money.ts                       проверка целой цены
 src/application/ports.ts                  внешние порты приложения
-src/application/sync-hot-tickets.ts       orchestration синхронизации
+src/application/sync-tickets.ts           синхронизация одной пары origin/currency
+src/application/sync-hot-tickets-job.ts   обход всех активных sync_sources
 src/application/users.ts                  регистрация и контакт
 src/application/tickets.ts                запрос списка билетов
 src/application/subscriptions.ts          создание и управление подписками
@@ -54,6 +59,7 @@ src/platform/telegram/http.ts              адаптер sdk/fetch
 src/handlers/message.ts                    message update entry point
 src/handlers/callback_query.ts             callback update entry point
 src/entries/sync-hot-tickets.ts            callable sync-модуль без HTTP
+src/http/sync-endpoint.ts                  защищённый endpoint-контракт
 schema.ts                                  Telegram SQLite schema DSL
 tests/fixtures/aviasales-hot-offers.json   реальный ответ TAS/UZS
 tests/unit/                                чистые unit-тесты
@@ -363,7 +369,7 @@ git commit -m "feat: add subscription matching and ticket events"
 **Интерфейсы:**
 
 - производит named exports `users`, `tickets`, `ticketPriceHistory`, `subscriptions`, `notificationHistory`, `userSessions`, `syncSources`, `syncRuns`, `syncLocks`;
-- производит порты `UserRepository`, `TicketRepository`, `SubscriptionRepository`, `SessionRepository`, `NotificationHistoryRepository`, `SyncRepository`, `HotTicketsProvider`, `TicketNotifier`, `TelegramGateway`, `Clock`, `Logger`.
+- производит порты `UserRepository`, `TicketRepository`, `PriceHistoryRepository`, `SubscriptionRepository`, `SessionRepository`, `NotificationHistoryRepository`, `SyncSourceRepository`, `SyncRunRepository`, `LockRepository`, `HotTicketsProvider`, `TicketNotifier`, `TelegramGateway`, `Clock`, `Logger`.
 
 - [ ] **Шаг 1: написать контрактный тест обязательных таблиц и индексов**
 
@@ -401,9 +407,21 @@ export const syncLocks = table('sync_locks', {
 export interface TicketRepository {
   findByExternalKey(externalKey: string): Promise<StoredTicket | null>;
   upsert(ticket: Ticket, observedAt: Date): Promise<{ stored: StoredTicket; previous: StoredTicket | null }>;
-  addPriceHistory(ticketId: number, price: number, observedAt: Date): Promise<void>;
   deactivateUnseenBefore(source: SyncSource, threshold: Date): Promise<number>;
   listActive(query: TicketQuery): Promise<readonly StoredTicket[]>;
+}
+
+export interface PriceHistoryRepository {
+  add(ticketId: number, price: number, observedAt: Date): Promise<void>;
+}
+
+export interface SyncSourceRepository {
+  findEnabled(): Promise<readonly SyncSource[]>;
+}
+
+export interface LockRepository {
+  acquire(key: string, ttlSeconds: number): Promise<boolean>;
+  release(key: string): Promise<void>;
 }
 
 export interface TicketNotifier {
@@ -436,6 +454,7 @@ git commit -m "feat: define Telegram database schema and application ports"
 - создать `src/infrastructure/aviasales/guards.ts`;
 - создать `src/infrastructure/aviasales/mapper.ts`;
 - создать `src/infrastructure/aviasales/client.ts`;
+- создать `src/config.ts`;
 - создать `tests/unit/aviasales/url.test.ts`;
 - создать `tests/unit/aviasales/mapper.test.ts`;
 - создать `tests/unit/aviasales/client.test.ts`.
@@ -445,7 +464,9 @@ git commit -m "feat: define Telegram database schema and application ports"
 - потребляет `Ticket`, code validators, link normalization и `Logger`;
 - производит `createHotOffersUrl(input): URL`;
 - производит `mapHotOffersResponse(value: unknown, logger: Logger): Ticket[]`;
+- производит `AviasalesClient.getHotOffers(input): Promise<unknown>` как единственную точку фактического HTTP-вызова;
 - производит `AviasalesHotTicketsProvider`.
+- производит `loadConfig(input): AppConfig` с единственным базовым URL Explore API.
 
 - [ ] **Шаг 1: сохранить фактический API response как fixture**
 
@@ -455,9 +476,11 @@ git commit -m "feat: define Telegram database schema and application ports"
 
 Тест сравнивает origin, currency и все 12 дополнительных query params из ТЗ. Пустой origin и currency должны бросать `ValidationError` до вызова HTTP.
 
+Отдельный тест передаёт `aviasalesExploreBaseUrl: 'https://example.test'` и проверяет путь `/v1/hot_offers/list.json`, подтверждая отсутствие захардкоженного production host в URL builder.
+
 - [ ] **Шаг 3: реализовать URL builder и запустить тест**
 
-`currency` отправляется в нижнем регистре, `origin` — в верхнем. Команда: `npm test -- tests/unit/aviasales/url.test.ts`.
+`currency` отправляется в нижнем регистре, `origin` — в верхнем. `src/config.ts` проверяет `AVIASALES_EXPLORE_BASE_URL` как HTTPS URL и выдаёт `https://explore-api.aviasales.com` только для явно созданной Telegram production-конфигурации. Команда: `npm test -- tests/unit/aviasales/url.test.ts`.
 
 - [ ] **Шаг 4: написать mapper-тест по реальному fixture**
 
@@ -485,7 +508,7 @@ export interface Sleeper {
 }
 ```
 
-Задержки между retry равны 250 и 500 миллисекундам. JSON parsing и structural mapping выполняются после успешного HTTP и не попадают в retry-loop.
+Задержки между retry равны 250 и 500 миллисекундам. `AviasalesClient` всегда отправляет `GET` и `Accept: application/json`, а после успешного HTTP возвращает распарсенный `unknown`. Invalid JSON и structural mapping не попадают в retry-loop. `AviasalesHotTicketsProvider` вызывает client, затем mapper.
 
 - [ ] **Шаг 8: выполнить тесты и создать коммит**
 
@@ -496,19 +519,20 @@ git add src/infrastructure/aviasales tests/fixtures tests/unit/aviasales
 git commit -m "feat: integrate Aviasales hot offers API"
 ```
 
-## Задача 6: In-memory persistence и orchestration синхронизации
+## Задача 6: In-memory persistence, SyncTicketsService и SyncHotTicketsJob
 
 **Файлы:**
 
 - создать `src/infrastructure/memory/store.ts`;
-- создать `src/application/sync-hot-tickets.ts`;
+- создать `src/application/sync-tickets.ts`;
+- создать `src/application/sync-hot-tickets-job.ts`;
 - создать `tests/integration/sync-hot-tickets.test.ts`.
 
 **Интерфейсы:**
 
 - потребляет все порты задачи 4 и события задачи 3;
-- производит `createSyncHotTickets(dependencies)`;
-- производит `syncHotTickets(input): Promise<SyncResult>`;
+- производит `SyncTicketsService.execute(input): Promise<SyncResult>` для одной пары;
+- производит `SyncHotTicketsJob.execute(): Promise<{ processedSources: number }>` для всех активных пар;
 - производит in-memory реализации портов для сценарных тестов.
 
 - [ ] **Шаг 1: написать интеграционный тест первого sync**
@@ -521,7 +545,7 @@ Fake provider возвращает один билет, активная под�
 
 - [ ] **Шаг 3: реализовать минимальный orchestration и in-memory store**
 
-`createSyncHotTickets` получает зависимости объектом и возвращает функцию. Lock всегда освобождается в `finally`. История уведомления записывается строго после `notifier.send`.
+`SyncTicketsService` получает через constructor provider, ticket repository, price history repository, subscription repository, notification history repository, notifier, lock repository, sync run repository, clock и logger. Он обрабатывает одну валидированную пару. Lock всегда освобождается в `finally`. История уведомления записывается строго после `notifier.send`.
 
 - [ ] **Шаг 4: добавить сценарии повторного sync и изменения цены**
 
@@ -529,18 +553,18 @@ Fake provider возвращает один билет, активная под�
 
 - [ ] **Шаг 5: добавить сценарии ошибок и конкуренции**
 
-Покрыть активный lock (`skipped` без HTTP), исключение provider (`failed` и освобождённый lock), ошибку Telegram send (notification history отсутствует), неактивную подписку и деактивацию билета старше шести часов.
+Покрыть активный lock (`skipped` без HTTP), исключение provider (`failed` и освобождённый lock), ошибку Telegram send (notification history отсутствует), неактивную подписку и деактивацию билета старше шести часов. Добавить два sync source: первая пара падает, вторая успешно обрабатывается; logger получает `ticket_sync_source_failed`, job возвращает `processedSources: 1`.
 
 - [ ] **Шаг 6: реализовать полное поведение до прохождения сценариев**
 
-`SyncResult` содержит `status`, `origin`, `currency`, `fetched`, `inserted`, `updated`, `notificationsSent`. Счётчики обновляются после подтверждённых операций репозиториев.
+`SyncResult` содержит `status`, `origin`, `currency`, `fetched`, `inserted`, `updated`, `notificationsSent`. Счётчики обновляются после подтверждённых операций репозиториев. При ошибке service завершает `sync_runs` статусом `failed`, затем повторно бросает ошибку. `SyncHotTicketsJob` вызывает `syncSourceRepository.findEnabled()`, оборачивает каждую пару в отдельный `try/catch`, логирует `ticket_sync_source_failed` и продолжает цикл после ошибки.
 
 - [ ] **Шаг 7: выполнить полный набор проверок и создать коммит**
 
 Команды: `npm test`, `npm run typecheck`, `npm run lint`.
 
 ```bash
-git add src/application/sync-hot-tickets.ts src/infrastructure/memory tests/integration/sync-hot-tickets.test.ts
+git add src/application/sync-tickets.ts src/application/sync-hot-tickets-job.ts src/infrastructure/memory tests/integration/sync-hot-tickets.test.ts
 git commit -m "feat: orchestrate idempotent ticket synchronization"
 ```
 
@@ -638,7 +662,7 @@ Adapter вызывает `fetch` из `sdk`, ограничивает ожида
 
 - [ ] **Шаг 5: собрать production composition root**
 
-`src/entries/sync-hot-tickets.ts` создаёт adapters, use case и экспортирует default async function с входом `{ originCode?: string; currencyCode?: string }`. При отсутствии входа функция проходит активные `sync_sources`; при наличии запускает одну валидированную пару.
+`src/entries/sync-hot-tickets.ts` создаёт adapters, `SyncTicketsService`, `SyncHotTicketsJob` и экспортирует default async function без внешних origin/currency. Entry point всегда получает активные пары из `sync_sources`.
 
 - [ ] **Шаг 6: выполнить contract и build проверки**
 
@@ -659,6 +683,8 @@ git commit -m "feat: connect application to Telegram Serverless SDK"
 
 - создать `README.md`;
 - создать `.env.example` только для локальных и будущих trigger-настроек;
+- создать `src/http/sync-endpoint.ts`;
+- создать `tests/unit/http/sync-endpoint.test.ts`;
 - изменить `package.json`, добавив команды `cloud:login`, `cloud:status`, `cloud:diff`, `cloud:push`, `cloud:migrate` и `cloud:run-sync`, запускающие `../node_modules/.bin/tgcloud` из `telegram-dist`;
 - проверить все созданные файлы.
 
@@ -666,7 +692,8 @@ git commit -m "feat: connect application to Telegram Serverless SDK"
 
 - производит инструкцию активации Serverless в BotFather;
 - производит npm-команды для `tgcloud login`, `push`, `migrate`, `run`, `status`;
-- фиксирует, что cron endpoint не реализован до выбора поддерживаемого hosting-механизма.
+- производит защищённый транспортно-независимый контракт `POST /internal/jobs/sync-hot-tickets`;
+- фиксирует, что публикация cron endpoint ожидает выбора поддерживаемого hosting-механизма.
 
 - [ ] **Шаг 1: написать README с точной последовательностью разработки**
 
@@ -674,15 +701,44 @@ README описывает Node.js 18+, `npm install`, `npm run verify`, вклю
 
 - [ ] **Шаг 2: документировать конфигурацию**
 
-Константы Aviasales market/language/passport country, timezone, expiration, session TTL и lock TTL находятся в типизированном модуле. `TELEGRAM_BOT_TOKEN` не требуется. `SYNC_SECRET` появляется только вместе с будущим HTTP trigger и до этого не читается.
+`.env.example` содержит `AVIASALES_EXPLORE_BASE_URL=https://explore-api.aviasales.com` и пустой `SYNC_SECRET`. Константы market/language/passport country, timezone, expiration, session TTL и lock TTL находятся в типизированном модуле. `TELEGRAM_BOT_TOKEN` не требуется.
 
-- [ ] **Шаг 3: выполнить release gate**
+- [ ] **Шаг 3: написать падающие тесты endpoint-контракта**
+
+Проверить отказ для `GET`, отсутствующего/неверного bearer secret и успешный `POST`. Request body игнорируется и не может передать URL, origin или currency. Успешный ответ строго равен:
+
+```json
+{
+  "status": "success",
+  "processed_sources": 1
+}
+```
+
+Ошибка job возвращает безопасный статус `500` без stack trace и ответа Aviasales.
+
+- [ ] **Шаг 4: реализовать транспортно-независимый endpoint**
+
+```ts
+export interface SyncEndpointRequest {
+  method: string;
+  authorization: string | null;
+}
+
+export interface SyncEndpointResponse {
+  statusCode: number;
+  body: { status: 'success'; processed_sources: number } | { status: 'error' };
+}
+```
+
+Factory получает `syncSecret` и `SyncHotTicketsJob`, выполняет constant-time сравнение bearer token, вызывает только `job.execute()` и не принимает произвольные параметры синхронизации.
+
+- [ ] **Шаг 5: выполнить release gate**
 
 Команда: `npm run verify`.
 
 Ожидаемый результат: ESLint, TypeScript, все Vitest suites и Telegram build проходят с кодом 0.
 
-- [ ] **Шаг 4: проверить рабочее дерево и deploy-манифест**
+- [ ] **Шаг 6: проверить рабочее дерево и deploy-манифест**
 
 Команды:
 
@@ -694,10 +750,10 @@ npm run cloud:diff
 
 `tgcloud`-команды выполняются после того, как пользователь включит Serverless и введёт CLI access token. Если токена ещё нет, локальная готовность подтверждается `npm run verify`, а deploy остаётся единственным внешним шагом.
 
-- [ ] **Шаг 5: создать итоговый коммит**
+- [ ] **Шаг 7: создать итоговый коммит**
 
 ```bash
-git add README.md .env.example package.json package-lock.json
+git add README.md .env.example package.json package-lock.json src/http tests/unit/http
 git commit -m "docs: add Telegram Serverless deployment guide"
 ```
 
@@ -711,4 +767,4 @@ git commit -m "docs: add Telegram Serverless deployment guide"
 - Уведомления, price drop и дедупликация покрыты задачами 3, 6 и 8.
 - Telegram SQLite schema и отсутствие foreign keys покрыты задачей 4.
 - Strict TypeScript, отсутствие runtime npm и deploy-ограничения покрыты задачами 1 и 9.
-- Публичный HTTP/cron trigger осознанно исключён из этого плана и добавляется отдельным планом после решения платформенного вопроса.
+- Защищённый HTTP endpoint-контракт покрыт задачей 9; отдельным остаётся только hosting-адаптер, который опубликует контракт после выбора платформы.
