@@ -4,7 +4,11 @@ import type {
   TelegramMessageInput
 } from '../../application/models.js';
 import type { TelegramGateway, TicketNotifier } from '../../application/ports.js';
-import { parseTelegramUpdate, type TelegramUpdate } from './updates.js';
+import {
+  parseTelegramUpdate,
+  parseTelegramUpdateId,
+  type TelegramUpdate
+} from './updates.js';
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -41,7 +45,18 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
       allowed_updates: ['message', 'callback_query']
     }, signal);
     if (!Array.isArray(result)) throw new TypeError('Telegram API вернул некорректный result getUpdates');
-    return result.map(parseTelegramUpdate);
+    return result.map((value) => {
+      try {
+        return parseTelegramUpdate(value);
+      } catch {
+        return {
+          updateId: parseTelegramUpdateId(value),
+          message: null,
+          callbackQuery: null,
+          malformed: true
+        };
+      }
+    });
   }
 
   public async deleteWebhook(): Promise<void> {

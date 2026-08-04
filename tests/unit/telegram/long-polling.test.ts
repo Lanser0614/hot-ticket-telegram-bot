@@ -130,6 +130,26 @@ describe('LongPollingRunner', () => {
     expect(JSON.stringify(subject.logger.errors)).not.toContain('secret failure');
   });
 
+  it('пропускает повреждённый payload и продвигает offset', async () => {
+    const subject = fixture();
+    const malformed = {
+      updateId: 7,
+      message: null,
+      callbackQuery: null,
+      malformed: true
+    } as TelegramUpdate;
+    subject.api.updates = [malformed, update(8, 'unsupported')];
+
+    await subject.runner.pollOnce(new AbortController().signal);
+
+    expect(subject.sleeps).toEqual([1_000, 2_000]);
+    expect(subject.offsets.saved).toEqual([8, 9]);
+    expect(subject.logger.errors).toEqual([{
+      event: 'telegram_update_skipped',
+      context: { updateId: 7, errorType: 'TypeError' }
+    }]);
+  });
+
   it('завершает активный polling после abort', async () => {
     const controller = new AbortController();
     const subject = fixture();

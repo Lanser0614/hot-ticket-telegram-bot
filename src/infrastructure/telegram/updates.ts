@@ -9,6 +9,7 @@ export interface TelegramUpdate {
   readonly updateId: number;
   readonly message: TelegramMessage | null;
   readonly callbackQuery: TelegramCallbackQuery | null;
+  readonly malformed?: true;
 }
 
 function record(value: unknown, name: string): RecordValue {
@@ -95,4 +96,8 @@ export function parseTelegramUpdate(value: unknown): TelegramUpdate {
     return { updateId, message: null, callbackQuery: parseCallbackQuery(input.callback_query) };
   }
   return { updateId, message: null, callbackQuery: null };
+}
+
+export function parseTelegramUpdateId(value: unknown): number {
+  return integer(record(value, 'update').update_id, 'update_id');
 }

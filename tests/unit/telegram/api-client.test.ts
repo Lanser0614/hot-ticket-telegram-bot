@@ -34,6 +34,25 @@ describe('TelegramBotApiClient', () => {
     });
   });
 
+  it('изолирует повреждённый update с корректным update_id', async () => {
+    const fetch: FetchLike = () => Promise.resolve(jsonResponse({
+      ok: true,
+      result: [
+        { update_id: 7, message: { chat: null } },
+        { update_id: 8 }
+      ]
+    }));
+    const client = new TelegramBotApiClient('123:secret', fetch);
+
+    await expect(client.getUpdates(
+      { offset: 7, timeoutSeconds: 50 },
+      new AbortController().signal
+    )).resolves.toEqual([
+      { updateId: 7, message: null, callbackQuery: null, malformed: true },
+      { updateId: 8, message: null, callbackQuery: null }
+    ]);
+  });
+
   it('отправляет message и возвращает message id', async () => {
     const fetch: FetchLike = () => Promise.resolve(jsonResponse({ ok: true, result: { message_id: 45 } }));
     const client = new TelegramBotApiClient('123:secret', fetch);

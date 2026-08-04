@@ -76,7 +76,7 @@ export class SqliteDatabase implements RawDatabase {
   }
 
   public transaction<T>(operation: () => T): T {
-    return this.database.transaction(operation)();
+    return this.database.transaction(operation).immediate();
   }
 
   public async backup(path: string): Promise<void> {

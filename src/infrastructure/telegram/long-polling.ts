@@ -65,9 +65,12 @@ export class LongPollingRunner {
   }
 
   private async processUpdate(update: TelegramUpdate): Promise<void> {
-    if (update.message === null && update.callbackQuery === null) return;
     for (let attempt = 1; attempt <= this.dependencies.updateMaxAttempts; attempt += 1) {
       try {
+        if (update.malformed === true) {
+          throw new TypeError('Некорректный Telegram update payload');
+        }
+        if (update.message === null && update.callbackQuery === null) return;
         if (update.message !== null) {
           await this.dependencies.router.handleMessage(update.message);
         } else if (update.callbackQuery !== null) {

@@ -23,6 +23,22 @@ afterEach(() => {
 });
 
 describe('SQLite migrations', () => {
+  it('берёт write reservation до чтения migration state', () => {
+    const databasePath = temporaryDatabasePath();
+    const first = openSqliteDatabase(databasePath);
+    const second = openSqliteDatabase(databasePath);
+    first.execute('CREATE TABLE lock_probe (id INTEGER PRIMARY KEY)');
+    second.execute('PRAGMA busy_timeout = 1');
+
+    expect(() => first.transaction(() => {
+      first.getSync('SELECT count(*) AS count FROM lock_probe');
+      second.runSync('INSERT INTO lock_probe (id) VALUES (1)');
+    })).toThrow(/SQLITE_BUSY|database is locked/iu);
+
+    first.close();
+    second.close();
+  });
+
   it('создаёт schema один раз и включает pragmas', async () => {
     const database = openSqliteDatabase(temporaryDatabasePath());
     applyMigrations(database, migrationsDirectory);

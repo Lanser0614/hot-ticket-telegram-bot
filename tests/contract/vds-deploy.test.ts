@@ -17,11 +17,18 @@ describe('VDS deploy files', () => {
 
   it('запускает sync каждые 10 минут и backup в 03:30', () => {
     const cron = readFileSync('deploy/cron/hot-ticket-bot', 'utf8');
+    expect(cron).toContain('CRON_TZ=UTC');
     expect(cron).toContain('*/10 * * * * hotticket');
     expect(cron).toContain('flock -n /run/lock/hot-ticket-bot-sync.lock');
     expect(cron).toContain('dist/entries/sync.js');
     expect(cron).toContain('30 3 * * * hotticket');
     expect(cron).toContain('dist/entries/backup.js');
     expect(cron).toContain('source /etc/hot-ticket-bot.env');
+  });
+
+  it('описывает установку Node.js 24 на чистой Ubuntu', () => {
+    const readme = readFileSync('README.md', 'utf8');
+    expect(readme).toContain('https://deb.nodesource.com/setup_24.x');
+    expect(readme).toContain('sudo apt install -y nodejs');
   });
 });

@@ -41,7 +41,7 @@ describe('SQLite backup', () => {
       ) VALUES (100, 200, 1, 1)
     `);
     database.close();
-    const oldManagedBackup = join(backupDirectory, 'hot-ticket-bot-20260720T033000Z.sqlite');
+    const oldManagedBackup = join(backupDirectory, 'hot-ticket-bot-20260720T033000.456Z.sqlite');
     const recentManagedBackup = join(backupDirectory, 'hot-ticket-bot-20260801T033000Z.sqlite');
     const unrelatedFile = join(backupDirectory, 'keep-me.txt');
     writeFileSync(oldManagedBackup, 'old');
@@ -51,7 +51,7 @@ describe('SQLite backup', () => {
     const result = await backupDatabase({
       databasePath,
       backupDirectory,
-      now: new Date('2026-08-04T03:30:00Z')
+      now: new Date('2026-08-04T03:30:00.123Z')
     });
 
     expect(result.path).toMatch(/hot-ticket-bot-20260804T033000Z\.sqlite$/u);

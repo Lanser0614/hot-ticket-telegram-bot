@@ -22,6 +22,17 @@ Telegram-бот горячих авиабилетов Aviasales. Бот рабо
 - обычный Telegram Bot API token из [@BotFather](https://t.me/BotFather);
 - системные команды `systemd`, `cron` и `flock`.
 
+На чистой Ubuntu установите системные зависимости и Node.js 24 из репозитория [NodeSource](https://github.com/nodesource/distributions):
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl cron util-linux sqlite3
+curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/nodesource_setup_24.sh
+sudo -E bash /tmp/nodesource_setup_24.sh
+sudo apt install -y nodejs
+sudo apt install -y build-essential python3
+```
+
 Проверьте Node.js:
 
 ```bash

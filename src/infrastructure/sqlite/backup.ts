@@ -3,14 +3,14 @@ import { join } from 'node:path';
 
 import { openSqliteDatabase } from './database.js';
 
-const MANAGED_BACKUP = /^hot-ticket-bot-\d{8}T\d{6}Z\.sqlite$/u;
+const MANAGED_BACKUP = /^hot-ticket-bot-\d{8}T\d{6}(?:\.\d{3})?Z\.sqlite$/u;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 
 function backupName(date: Date): string {
   const timestamp = date.toISOString()
+    .replace(/\.\d{3}Z$/u, 'Z')
     .replaceAll('-', '')
-    .replaceAll(':', '')
-    .replace('.000', '');
+    .replaceAll(':', '');
   return `hot-ticket-bot-${timestamp}.sqlite`;
 }
 
