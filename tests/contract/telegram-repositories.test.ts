@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports.js';
-import { TelegramRepositories, type RawDatabase } from '../../src/platform/telegram/repositories.js';
+import { ApplicationRepositories, type RawDatabase } from '../../src/infrastructure/sqlite/repositories.js';
 
 class FixedClock implements Clock {
   public now(): Date {
@@ -58,11 +58,11 @@ function userRow(): Readonly<Record<string, unknown>> {
   };
 }
 
-describe('TelegramRepositories', () => {
+describe('ApplicationRepositories', () => {
   it('upsert пользователя использует unique telegram_user_id и bound params', async () => {
     const db = new FakeDatabase();
     db.getResults.push(userRow());
-    const repositories = new TelegramRepositories(db, new FixedClock());
+    const repositories = new ApplicationRepositories(db, new FixedClock());
 
     await expect(repositories.upsertTelegramProfile({
       telegramUserId: 100,
@@ -80,7 +80,7 @@ describe('TelegramRepositories', () => {
   it('получает lock одной атомарной командой и освобождает только своего owner', async () => {
     const db = new FakeDatabase();
     db.getResults.push({ key: 'sync:hot-tickets:TAS:UZS' });
-    const repositories = new TelegramRepositories(db, new FixedClock());
+    const repositories = new ApplicationRepositories(db, new FixedClock());
 
     await expect(repositories.acquire('sync:hot-tickets:TAS:UZS', 300)).resolves.toBe(true);
     await repositories.release('sync:hot-tickets:TAS:UZS');
@@ -92,7 +92,7 @@ describe('TelegramRepositories', () => {
 
   it('вставляет notification history с защитой от конфликта', async () => {
     const db = new FakeDatabase();
-    const repositories = new TelegramRepositories(db, new FixedClock());
+    const repositories = new ApplicationRepositories(db, new FixedClock());
 
     await repositories.addNotification({
       userId: 1,
@@ -107,4 +107,3 @@ describe('TelegramRepositories', () => {
     expect(db.calls[0]?.query).toContain('ON CONFLICT(user_id, subscription_id, ticket_id, notified_price) DO NOTHING');
   });
 });
-

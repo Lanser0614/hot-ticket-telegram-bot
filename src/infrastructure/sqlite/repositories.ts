@@ -158,7 +158,7 @@ function mapSyncSource(row: Row): SyncSource {
   };
 }
 
-export class TelegramRepositories implements
+export class ApplicationRepositories implements
   UserRepository,
   TicketRepository,
   PriceHistoryRepository,

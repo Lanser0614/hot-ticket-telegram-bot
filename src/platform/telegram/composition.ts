@@ -16,7 +16,7 @@ import {
 import { SdkTextHttpClient } from './http.js';
 import { ConsoleLogger, SystemClock } from './logger.js';
 import { TelegramApiAdapter } from './notifier.js';
-import { TelegramRepositories } from './repositories.js';
+import { ApplicationRepositories } from '../../infrastructure/sqlite/repositories.js';
 
 class TimerSleeper implements Sleeper {
   public sleep(milliseconds: number): Promise<void> {
@@ -27,7 +27,7 @@ class TimerSleeper implements Sleeper {
 function createSharedRuntime() {
   const clock = new SystemClock();
   const logger = new ConsoleLogger();
-  const repositories = new TelegramRepositories(db, clock);
+  const repositories = new ApplicationRepositories(db, clock);
   const telegram = new TelegramApiAdapter(api);
   return { clock, logger, repositories, telegram };
 }
@@ -75,4 +75,3 @@ export function createSyncRuntime(): {
     ensureInitialSource: () => runtime.repositories.ensureInitialSource(runtime.clock.now())
   };
 }
-

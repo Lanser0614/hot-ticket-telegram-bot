@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 
 import Database from 'better-sqlite3';
 
-import type { RawDatabase } from '../../platform/telegram/repositories.js';
+import type { RawDatabase } from './repositories.js';
 
 type Row = Readonly<Record<string, unknown>>;
 type Parameters = Readonly<Record<string, unknown>>;
