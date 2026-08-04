@@ -1,3 +1,7 @@
-export default function syncHotTickets(): never {
-  throw new Error('Синхронизация ещё не подключена');
+import { createSyncRuntime } from '../platform/telegram/composition.js';
+
+export default async function syncHotTickets(): Promise<{ processedSources: number }> {
+  const runtime = createSyncRuntime();
+  await runtime.ensureInitialSource();
+  return runtime.job.execute();
 }

@@ -41,6 +41,18 @@ declare module 'sdk/db' {
 }
 
 declare module 'sdk' {
+  export interface SdkDatabase {
+    run(query: string, parameters?: Readonly<Record<string, unknown>>): Promise<unknown>;
+    all(
+      query: string,
+      parameters?: Readonly<Record<string, unknown>>
+    ): Promise<readonly Readonly<Record<string, unknown>>[]>;
+    get(
+      query: string,
+      parameters?: Readonly<Record<string, unknown>>
+    ): Promise<Readonly<Record<string, unknown>> | null>;
+  }
+
   export interface TelegramApi {
     sendMessage(parameters: Readonly<Record<string, unknown>>): Promise<unknown>;
     answerCallbackQuery(parameters: Readonly<Record<string, unknown>>): Promise<unknown>;
@@ -73,6 +85,7 @@ declare module 'sdk' {
   ) => Promise<SdkResponse>;
 
   export const api: TelegramApi;
+  export const db: SdkDatabase;
   export const fetch: SdkFetch;
 }
 
@@ -83,4 +96,3 @@ declare module 'sdk/api' {
 declare module 'sdk/fetch' {
   export { fetch } from 'sdk';
 }
-
