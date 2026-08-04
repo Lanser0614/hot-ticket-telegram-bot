@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "node scripts/build-telegram.mjs",
     "cloud:login": "node scripts/tgcloud.mjs login",
@@ -20,11 +23,15 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tgcloud/cli": "^0.1.2",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.2"
   }
 }
