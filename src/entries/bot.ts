@@ -10,6 +10,7 @@ export async function runBot(
 ): Promise<void> {
   const runtime = createVdsRuntime(loadVdsConfig(environment), overrides);
   try {
+    await runtime.telegram.deleteWebhook();
     await runtime.polling.run(signal);
   } finally {
     runtime.close();

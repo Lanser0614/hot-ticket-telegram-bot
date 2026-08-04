@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "backup": "node --env-file-if-exists=.env dist/entries/backup.js",
     "start": "node --env-file-if-exists=.env dist/entries/bot.js",
     "sync": "node --env-file-if-exists=.env dist/entries/sync.js",
     "test": "vitest run",

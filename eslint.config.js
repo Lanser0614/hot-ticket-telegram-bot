@@ -7,7 +7,7 @@ const configDirectory = dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'telegram-dist/**', '.idea/**'],
+    ignores: ['node_modules/**', 'dist/**', 'telegram-dist/**', '.idea/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

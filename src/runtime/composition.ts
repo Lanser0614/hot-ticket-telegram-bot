@@ -86,6 +86,7 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
   return {
     database,
     repositories,
+    telegram,
     router,
     polling,
     syncJob,

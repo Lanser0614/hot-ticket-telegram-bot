@@ -1,148 +1,241 @@
-# HotTicketBot
+# HotTicketBot на VDS
 
-Telegram-бот на Telegram Serverless, который загружает горячие предложения Aviasales, показывает их пользователям и отправляет дедуплицированные уведомления по подпискам.
+Telegram-бот горячих авиабилетов Aviasales. Бот работает постоянным Node.js-процессом через long polling, хранит данные в локальном SQLite и запускает синхронизацию локальным cron каждые 10 минут.
 
-## Что уже реализовано
+Домен, webhook, Nginx, Telegram Serverless и внешний cron-сервис не нужны.
 
-- регистрация через `/start` и подтверждение собственного номера через Telegram contact;
-- просмотр, фильтрация и сортировка актуальных билетов;
-- создание и управление подписками, максимум 20 активных подписок на пользователя;
-- синхронизация всех активных пар `origin/currency`, начальная пара — `TAS/UZS`;
-- сохранение истории цен, деактивация устаревших билетов и защита от повторных уведомлений;
-- retry Aviasales для временных ошибок, timeout 10 секунд и изоляция ошибки отдельного источника;
-- строгая TypeScript-модель, SQLite-схема и deploy-сборка без неподдерживаемых runtime-импортов.
+## Возможности
+
+- `/start`, Telegram-профиль и проверка владельца контакта;
+- просмотр, фильтрация и сортировка горячих билетов;
+- подписки на направления, даты, цену, прямой рейс и багаж;
+- максимум 20 активных подписок на пользователя;
+- импорт всех активных `sync_sources`, начальный источник `TAS/UZS`;
+- история цен, price-drop уведомления и защита от повторной отправки;
+- SQLite WAL, sync locks, durable Telegram offset и автоматические миграции;
+- ежедневные резервные копии с хранением семь дней.
 
 ## Требования
 
-- Node.js 18 или новее;
-- npm;
-- Telegram-бот, созданный в [@BotFather](https://t.me/BotFather), и включённый для него Telegram Serverless;
-- отдельный CLI access token: `бот → Serverless → CLI Access → Access token` в @BotFather;
-- доступ к Aviasales Explore API.
+- Ubuntu VDS с 1 vCPU, 2 ГБ RAM и минимум 10 ГБ SSD;
+- Node.js 24 LTS;
+- обычный Telegram Bot API token из [@BotFather](https://t.me/BotFather);
+- системные команды `systemd`, `cron` и `flock`.
 
-## Локальный запуск проверок
+Проверьте Node.js:
 
 ```bash
-npm install
+node --version
+npm --version
+command -v node
+```
+
+Ожидается Node.js `v24.x`. Готовый systemd unit использует `/usr/bin/node`. Если `command -v node` показывает другой путь, замените `ExecStart` в unit и пути Node в cron-файле.
+
+## Локальная проверка проекта
+
+```bash
+npm ci
 npm run verify
 ```
 
-`npm run verify` последовательно запускает ESLint, проверку типов, тесты и сборку. Результат сборки создаётся в `telegram-dist/`:
+`verify` последовательно запускает ESLint, strict TypeScript, все тесты и production build. Результат создаётся в `dist/`.
 
-```text
-telegram-dist/
-├── schema.js
-├── handlers/
-│   ├── callback_query.js
-│   └── message.js
-└── lib/
-    └── sync-hot-tickets.js
-```
-
-Папка `telegram-dist/.tgcloud` сохраняется между сборками: в ней CLI хранит локальную привязку и snapshot проекта.
-
-## Конфигурация Aviasales
-
-Единственный базовый URL API:
-
-```text
-https://explore-api.aviasales.com
-```
-
-В Telegram Serverless он является контролируемой константой production-композиции и не может быть передан пользователем или cron-запросом. Для будущего внешнего HTTP-адаптера образец переменных находится в `.env.example`:
-
-```dotenv
-AVIASALES_EXPLORE_BASE_URL=https://explore-api.aviasales.com
-SYNC_SECRET=заменить-на-длинный-случайный-секрет
-```
-
-Секреты нельзя коммитить в репозиторий или передавать в query string.
-
-## Деплой в Telegram Serverless
-
-Все команды ниже автоматически выполняются из `telegram-dist`, чтобы CLI видел только допустимые deploy-файлы.
-
-1. Соберите проект:
-
-   ```bash
-   npm run build
-   ```
-
-2. Привяжите проект к боту. Команда интерактивно запросит отдельный CLI access token из раздела Serverless в @BotFather:
-
-   ```bash
-   npm run cloud:login
-   ```
-
-3. Проверьте локальные изменения относительно snapshot:
-
-   ```bash
-   npm run cloud:status
-   npm run cloud:diff
-   ```
-
-4. Отправьте модули и примените изменения SQLite-схемы:
-
-   ```bash
-   npm run cloud:push
-   npm run cloud:migrate
-   ```
-
-Перед подтверждением migration внимательно просмотрите diff. Для CI можно отдельно использовать поддерживаемые CLI-флаги `--safe`, `--yes` или `--dry-run`.
-
-Официальная документация: [Telegram Serverless](https://core.telegram.org/bots/serverless).
-
-## Ручной запуск синхронизации
-
-После деплоя callable-модуль можно вызвать через Telegram CLI:
+## 1. Создание пользователя и каталога на VDS
 
 ```bash
-npm run cloud:run-sync
+sudo useradd --system --user-group --home-dir /opt/hot-ticket-bot --create-home --shell /usr/sbin/nologin hotticket
+sudo mkdir -p /opt/hot-ticket-bot/data /opt/hot-ticket-bot/backups
+sudo chown -R hotticket:hotticket /opt/hot-ticket-bot
+sudo chmod 750 /opt/hot-ticket-bot /opt/hot-ticket-bot/data /opt/hot-ticket-bot/backups
 ```
 
-Модуль сам создаёт начальный источник `TAS/UZS`, если его ещё нет, затем обрабатывает все активные записи `sync_sources`. Он не принимает извне `origin`, `currency` или URL Aviasales.
+Скопируйте репозиторий в `/opt/hot-ticket-bot`. Можно использовать `git clone`, `rsync` или `scp`. После копирования:
 
-## Внешний бесплатный cron
-
-Telegram Serverless предоставляет callable-модули через свой CLI, но в использованной публичной документации нет механизма для произвольного публичного HTTP route. Поэтому внешний cron подключается через небольшой HTTP-адаптер на выбранном позже бесплатном хостинге.
-
-Готовый transport-independent контракт находится в `src/http/sync-endpoint.ts`:
-
-```http
-POST /internal/jobs/sync-hot-tickets
-Authorization: Bearer <SYNC_SECRET>
+```bash
+sudo chown -R hotticket:hotticket /opt/hot-ticket-bot
+cd /opt/hot-ticket-bot
+sudo -u hotticket npm ci
+sudo -u hotticket npm run verify
 ```
 
-Успешный ответ:
+## 2. Получение Telegram token
+
+Откройте [@BotFather](https://t.me/BotFather):
+
+1. `/mybots`;
+2. выберите `@hot_ticket_buy_bot`;
+3. нажмите `API Token`;
+4. скопируйте token.
+
+Это обычный Bot API token. Никому его не отправляйте и не добавляйте в Git.
+
+## 3. Настройка environment
+
+```bash
+sudo install -o hotticket -g hotticket -m 600 /opt/hot-ticket-bot/.env.example /etc/hot-ticket-bot.env
+sudoedit /etc/hot-ticket-bot.env
+```
+
+Production-значения:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=вставьте-token-из-BotFather
+DATABASE_PATH=/opt/hot-ticket-bot/data/hot-ticket-bot.sqlite
+BACKUP_DIRECTORY=/opt/hot-ticket-bot/backups
+AVIASALES_EXPLORE_BASE_URL=https://explore-api.aviasales.com
+TELEGRAM_POLL_TIMEOUT_SECONDS=50
+TELEGRAM_UPDATE_MAX_ATTEMPTS=3
+```
+
+Проверьте права, не печатая содержимое файла:
+
+```bash
+sudo stat -c '%U %G %a %n' /etc/hot-ticket-bot.env
+```
+
+Ожидается:
+
+```text
+hotticket hotticket 600 /etc/hot-ticket-bot.env
+```
+
+## 4. Установка systemd service
+
+```bash
+sudo install -o root -g root -m 644 deploy/systemd/hot-ticket-bot.service /etc/systemd/system/hot-ticket-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now hot-ticket-bot
+```
+
+При старте приложение:
+
+1. проверяет environment;
+2. открывает SQLite и применяет миграции;
+3. отключает старый Telegram webhook без удаления ожидающих updates;
+4. запускает long polling.
+
+Проверка:
+
+```bash
+sudo systemctl status hot-ticket-bot --no-pager
+sudo journalctl -u hot-ticket-bot -n 100 --no-pager
+```
+
+## 5. Первый ручной sync
+
+```bash
+sudo -u hotticket /bin/bash -c 'set -a; source /etc/hot-ticket-bot.env; cd /opt/hot-ticket-bot; /usr/bin/node dist/entries/sync.js'
+```
+
+Успешный результат:
 
 ```json
-{
-  "status": "success",
-  "processed_sources": 1
-}
+{"processedSources":1}
 ```
 
-Требования к hosting-адаптеру:
+Команда создаёт `TAS/UZS`, загружает предложения Aviasales и сохраняет их в SQLite.
 
-- передать endpoint только HTTP method и заголовок `Authorization`;
-- хранить `SYNC_SECRET` в секретах платформы;
-- не принимать из запроса source-параметры и внешний URL;
-- возвращать `401` для неверного секрета, `405` не для `POST`, `500` без внутренних деталей;
-- настроить cron так, чтобы повторный запуск был допустим: lock, upsert и notification history уже обеспечивают идемпотентность бизнес-операции.
+## 6. Установка локального cron
 
-Конкретный адаптер и расписание будут добавлены после выбора бесплатного cron/hosting-сервиса.
+```bash
+sudo install -o root -g root -m 644 deploy/cron/hot-ticket-bot /etc/cron.d/hot-ticket-bot
+sudo systemctl restart cron
+```
 
-## Основные команды
+Расписание:
 
-| Команда | Назначение |
-|---|---|
-| `npm test` | все тесты |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | строгая проверка TypeScript |
-| `npm run build` | собрать deploy-файлы |
-| `npm run verify` | полная локальная проверка |
-| `npm run cloud:status` | статус deploy-папки |
-| `npm run cloud:diff` | diff deploy-папки |
-| `npm run cloud:push` | отправить код в Telegram Serverless |
-| `npm run cloud:migrate` | применить schema migration |
-| `npm run cloud:run-sync` | вручную вызвать sync-модуль в облаке |
+- sync каждые 10 минут;
+- SQLite backup ежедневно в 03:30 UTC;
+- `flock` не позволяет двум sync-процессам работать одновременно;
+- managed backups старше семи дней удаляются автоматически.
+
+Проверка cron:
+
+```bash
+sudo cat /etc/cron.d/hot-ticket-bot
+sudo journalctl -u cron -n 100 --no-pager
+```
+
+## 7. Проверка Telegram-бота
+
+Откройте `@hot_ticket_buy_bot` и отправьте:
+
+```text
+/start
+```
+
+Далее отправьте собственный контакт, откройте горячие билеты и создайте тестовую подписку.
+
+## Управление процессом
+
+```bash
+sudo systemctl status hot-ticket-bot --no-pager
+sudo systemctl restart hot-ticket-bot
+sudo systemctl stop hot-ticket-bot
+sudo systemctl start hot-ticket-bot
+sudo journalctl -u hot-ticket-bot -f
+```
+
+## Ручные команды проекта
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run verify
+npm start
+npm run sync
+npm run backup
+```
+
+Локальные `start`, `sync` и `backup` читают `.env`, если он существует. На VDS systemd и cron читают `/etc/hot-ticket-bot.env`.
+
+## Обновление приложения
+
+```bash
+sudo systemctl stop hot-ticket-bot
+cd /opt/hot-ticket-bot
+sudo -u hotticket git pull --ff-only
+sudo -u hotticket npm ci
+sudo -u hotticket npm run verify
+sudo systemctl start hot-ticket-bot
+sudo systemctl status hot-ticket-bot --no-pager
+```
+
+Если проект копируется без Git, замените только исходники, `migrations`, `deploy`, `package.json` и `package-lock.json`, затем повторите `npm ci`, `npm run verify` и restart.
+
+## Backup и восстановление
+
+Создать копию вручную:
+
+```bash
+sudo -u hotticket /bin/bash -c 'set -a; source /etc/hot-ticket-bot.env; cd /opt/hot-ticket-bot; /usr/bin/node dist/entries/backup.js'
+```
+
+Перед восстановлением временно отключите cron-файл и остановите бот:
+
+```bash
+sudo mv /etc/cron.d/hot-ticket-bot /etc/cron.d/hot-ticket-bot.disabled
+sudo systemctl stop hot-ticket-bot
+sudo -u hotticket /bin/bash -c 'cd /opt/hot-ticket-bot/data; test ! -e hot-ticket-bot.sqlite || mv hot-ticket-bot.sqlite hot-ticket-bot.sqlite.before-restore; test ! -e hot-ticket-bot.sqlite-wal || mv hot-ticket-bot.sqlite-wal hot-ticket-bot.sqlite-wal.before-restore; test ! -e hot-ticket-bot.sqlite-shm || mv hot-ticket-bot.sqlite-shm hot-ticket-bot.sqlite-shm.before-restore'
+sudo install -o hotticket -g hotticket -m 600 /opt/hot-ticket-bot/backups/hot-ticket-bot-YYYYMMDDTHHMMSSZ.sqlite /opt/hot-ticket-bot/data/hot-ticket-bot.sqlite
+sudo systemctl start hot-ticket-bot
+sudo mv /etc/cron.d/hot-ticket-bot.disabled /etc/cron.d/hot-ticket-bot
+```
+
+Подставьте точное существующее имя backup-файла вместо примера. Перед production-восстановлением рекомендуется проверить копию отдельной командой `sqlite3 <backup-file> 'PRAGMA integrity_check;'`.
+
+## Диагностика
+
+Если бот не отвечает:
+
+```bash
+sudo systemctl status hot-ticket-bot --no-pager
+sudo journalctl -u hot-ticket-bot -n 200 --no-pager
+sudo -u hotticket test -r /etc/hot-ticket-bot.env
+sudo -u hotticket test -w /opt/hot-ticket-bot/data
+```
+
+Если sync не создаёт билеты, запустите ручную команду из раздела «Первый ручной sync» и проверьте `sync_runs` в SQLite. Ошибка одной пары source не останавливает обработку остальных пар.

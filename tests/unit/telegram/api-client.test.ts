@@ -41,6 +41,18 @@ describe('TelegramBotApiClient', () => {
       .resolves.toEqual({ messageId: 45 });
   });
 
+  it('удаляет старый webhook без потери pending updates', async () => {
+    let body: unknown;
+    const fetch: FetchLike = (_input, init) => {
+      if (typeof init?.body !== 'string') throw new TypeError('Ожидался JSON body');
+      body = JSON.parse(init.body) as unknown;
+      return Promise.resolve(jsonResponse({ ok: true, result: true }));
+    };
+    const client = new TelegramBotApiClient('123:secret', fetch);
+    await client.deleteWebhook();
+    expect(body).toEqual({ drop_pending_updates: false });
+  });
+
   it('не раскрывает token при Telegram error', async () => {
     const token = '123:top-secret';
     const fetch: FetchLike = () => Promise.resolve(jsonResponse({

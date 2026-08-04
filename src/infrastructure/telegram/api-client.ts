@@ -44,6 +44,10 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
     return result.map(parseTelegramUpdate);
   }
 
+  public async deleteWebhook(): Promise<void> {
+    await this.call('deleteWebhook', { drop_pending_updates: false });
+  }
+
   public async sendMessage(input: TelegramMessageInput): Promise<{ messageId: number }> {
     const result = await this.call('sendMessage', {
       chat_id: input.chatId,
