@@ -18,6 +18,8 @@ export interface Subscription {
   isActive: boolean;
 }
 
+export type SubscriptionDraft = Omit<Subscription, 'id' | 'isActive'>;
+
 function assertPositiveId(value: number, field: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new ValidationError(`Некорректный идентификатор ${field}`);
@@ -25,7 +27,7 @@ function assertPositiveId(value: number, field: string): number {
   return value;
 }
 
-export function validateSubscription(value: Subscription): Subscription {
+export function validateSubscriptionDraft(value: SubscriptionDraft): SubscriptionDraft {
   const departureDateFrom = assertIsoDate(value.departureDateFrom);
   const departureDateTo = assertIsoDate(value.departureDateTo);
   if (departureDateFrom > departureDateTo) {
@@ -34,7 +36,6 @@ export function validateSubscription(value: Subscription): Subscription {
 
   return {
     ...value,
-    id: assertPositiveId(value.id, 'подписки'),
     userId: assertPositiveId(value.userId, 'пользователя'),
     originCode: normalizeIataCode(value.originCode),
     destinationCode: value.destinationCode === null
@@ -44,6 +45,14 @@ export function validateSubscription(value: Subscription): Subscription {
     departureDateFrom,
     departureDateTo,
     maxPrice: value.maxPrice === null ? null : assertMoney(value.maxPrice)
+  };
+}
+
+export function validateSubscription(value: Subscription): Subscription {
+  return {
+    ...validateSubscriptionDraft(value),
+    id: assertPositiveId(value.id, 'подписки'),
+    isActive: value.isActive
   };
 }
 
@@ -61,4 +70,3 @@ export function matchesSubscription(ticket: Ticket, subscription: Subscription):
     && (!subscription.directOnly || ticket.isDirect)
     && (!subscription.baggageRequired || ticket.hasBaggage);
 }
-
