@@ -18,14 +18,10 @@
     "skipLibCheck": true
   },
   "include": [
-    "schema.ts",
     "src/**/*.ts",
     "tests/**/*.ts",
-    "scripts/**/*.js",
-    "scripts/**/*.mjs",
     "eslint.config.js",
     "vitest.config.ts"
   ],
-  "exclude": ["node_modules", "telegram-dist"]
+  "exclude": ["node_modules", "dist", "telegram-dist"]
 }
-

@@ -7,13 +7,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "node scripts/build-telegram.mjs",
-    "cloud:login": "node scripts/tgcloud.mjs login",
-    "cloud:status": "node scripts/tgcloud.mjs status",
-    "cloud:diff": "node scripts/tgcloud.mjs diff",
-    "cloud:push": "node scripts/tgcloud.mjs push",
-    "cloud:migrate": "node scripts/tgcloud.mjs migrate",
-    "cloud:run-sync": "node scripts/tgcloud.mjs run lib/sync-hot-tickets {}",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/entries/bot.js",
+    "sync": "node --env-file-if-exists=.env dist/entries/sync.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
@@ -22,10 +18,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@tgcloud/cli": "^0.1.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.2",
-    "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0",

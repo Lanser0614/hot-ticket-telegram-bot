@@ -1,7 +1,9 @@
 node_modules/
 coverage/
 telegram-dist/
+dist/
+data/
+backups/
 .DS_Store
 *.log
 .env
-
