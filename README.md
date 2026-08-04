@@ -157,7 +157,7 @@ sudo systemctl restart cron
 Расписание:
 
 - sync каждые 10 минут;
-- SQLite backup ежедневно в 03:30 UTC;
+- SQLite backup ежедневно в 03:30 по системному времени VDS;
 - `flock` не позволяет двум sync-процессам работать одновременно;
 - managed backups старше семи дней удаляются автоматически.
 

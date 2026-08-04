@@ -15,15 +15,17 @@ describe('VDS deploy files', () => {
     expect(unit).not.toMatch(/PORT|nginx|webhook/iu);
   });
 
-  it('запускает sync каждые 10 минут и backup в 03:30', () => {
+  it('запускает sync каждые 10 минут и backup в 03:30 системного времени', () => {
     const cron = readFileSync('deploy/cron/hot-ticket-bot', 'utf8');
-    expect(cron).toContain('CRON_TZ=UTC');
+    const readme = readFileSync('README.md', 'utf8');
+    expect(cron).not.toContain('CRON_TZ');
     expect(cron).toContain('*/10 * * * * hotticket');
     expect(cron).toContain('flock -n /run/lock/hot-ticket-bot-sync.lock');
     expect(cron).toContain('dist/entries/sync.js');
     expect(cron).toContain('30 3 * * * hotticket');
     expect(cron).toContain('dist/entries/backup.js');
     expect(cron).toContain('source /etc/hot-ticket-bot.env');
+    expect(readme).toContain('03:30 по системному времени VDS');
   });
 
   it('описывает установку Node.js 24 на чистой Ubuntu', () => {
