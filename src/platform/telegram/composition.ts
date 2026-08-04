@@ -14,7 +14,7 @@ import {
   type Sleeper
 } from '../../infrastructure/aviasales/client.js';
 import { SdkTextHttpClient } from './http.js';
-import { ConsoleLogger, SystemClock } from './logger.js';
+import { ConsoleLogger, SystemClock } from '../../infrastructure/runtime/logger.js';
 import { TelegramApiAdapter } from './notifier.js';
 import { ApplicationRepositories } from '../../infrastructure/sqlite/repositories.js';
 
