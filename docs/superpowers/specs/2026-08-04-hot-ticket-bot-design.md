@@ -1,39 +1,39 @@
-# Hot Ticket Bot Design
+# Проектирование Telegram-бота горячих авиабилетов
 
-## Goal
+## Цель
 
-Build an MVP Telegram bot that periodically imports hot flight offers from the Aviasales Hot Offers API, stores current offers and price history, lets Telegram users browse and filter tickets, manages ticket subscriptions, and sends deduplicated notifications for new tickets and price drops.
+Создать MVP Telegram-бота, который регулярно получает горячие предложения из Aviasales Hot Offers API, хранит актуальные билеты и историю цен, позволяет пользователям искать и фильтровать билеты, управлять подписками и получать уведомления о новых предложениях и снижении цены без повторных отправок.
 
-The production runtime is Telegram Serverless. Application code is authored in strict TypeScript and compiled to the plain JavaScript modules accepted by Telegram Serverless.
+Production-среда — Telegram Serverless. Код приложения пишется на TypeScript в строгом режиме и компилируется в обычные JavaScript-модули, поддерживаемые Telegram Serverless.
 
-## Scope
+## Объём MVP
 
-The MVP includes:
+В MVP входят:
 
-- Telegram registration through `/start` and automatic profile updates from Telegram data.
-- Optional phone collection with contact ownership validation.
-- User settings for a three-character origin code and a three-character currency code.
-- Ticket browsing, sorting, filtering, and Aviasales links.
-- Subscription creation, listing, and deactivation, with at most 20 active subscriptions per user.
-- Aviasales synchronization for the initial `TAS` and `UZS` source.
-- Ticket upsert, price history, expiry, subscription matching, notifications, and notification deduplication.
-- Unit and integration tests for the business rules from the supplied requirements.
+- регистрация через `/start` и автоматическое обновление профиля из данных Telegram;
+- необязательное получение телефона с проверкой владельца контакта;
+- настройки трёхсимвольного кода отправления и трёхсимвольного кода валюты;
+- просмотр, сортировка и фильтрация билетов, переход по ссылке Aviasales;
+- создание, просмотр и отключение подписок, не более 20 активных подписок на пользователя;
+- синхронизация Aviasales для начального источника `TAS` и `UZS`;
+- создание и обновление билетов, история цен, деактивация устаревших предложений, сопоставление с подписками и дедупликация уведомлений;
+- модульные и интеграционные тесты бизнес-правил из ТЗ.
 
-The public HTTP or cron trigger is intentionally deferred. The synchronization use case will expose a stable callable interface so an HTTP endpoint, Telegram Cloud CLI invocation, or another external trigger can be added without modifying synchronization business logic.
+Публичный HTTP- или cron-trigger намеренно откладывается. Сценарий синхронизации получит стабильный программный интерфейс, поэтому позднее можно добавить HTTP endpoint, запуск через Telegram Cloud CLI или другой внешний trigger без изменения бизнес-логики.
 
-The MVP does not include city or country dictionaries, IATA-to-name mapping, multiple travel classes, round trips, payments, an admin UI, or binary file processing.
+В MVP не входят справочники стран и городов, преобразование IATA-кодов в названия, несколько классов обслуживания, билеты туда-обратно, платежи, административная панель и обработка бинарных файлов.
 
-## Platform Constraints
+## Ограничения платформы
 
-Telegram Serverless deploys only `schema.js`, flat `handlers/*.js`, and `lib/**/*.js`. The runtime is an isolated V8 environment with no filesystem, no runtime `node_modules`, and no network access except `fetch` from Telegram's `sdk`. Project modules use Telegram's bare module names rather than relative import paths.
+Telegram Serverless разворачивает только `schema.js`, плоскую директорию `handlers/*.js` и модули `lib/**/*.js`. Код исполняется в изолированной среде V8 без файловой системы, runtime-пакетов из `node_modules` и прямого сетевого доступа, кроме `fetch` из Telegram `sdk`. Модули проекта импортируются по абсолютным внутренним именам Telegram, а не по относительным путям.
 
-The built-in database is SQLite-backed and accessed asynchronously through the `sdk/db` query builder. Foreign keys are unavailable, so relations use integer identifier columns and application services enforce ownership and integrity.
+Встроенная база основана на SQLite и доступна асинхронно через query builder из `sdk/db`. Foreign keys отсутствуют, поэтому связи хранятся как идентификаторы, а владение и целостность контролируются сервисами приложения.
 
-The Bot API is accessed through `api` from `sdk`; no Telegram bot token is read by application code. Aviasales is accessed through `fetch` from `sdk`. External JSON is always accepted as `unknown` and validated before use.
+Telegram Bot API вызывается через `api` из `sdk`; токен Telegram-бота не читается прикладным кодом. Aviasales вызывается через `fetch` из `sdk`. Внешний JSON всегда принимается как `unknown` и валидируется до использования.
 
-## Build Layout
+## Структура исходников и сборки
 
-The repository keeps editable TypeScript and generated Telegram modules separate:
+Редактируемый TypeScript отделяется от генерируемых Telegram-модулей:
 
 ```text
 src/
@@ -51,33 +51,33 @@ telegram-dist/
 └── schema.js
 ```
 
-`src/domain` contains pure models, validation, matching, price-drop detection, link normalization, and external-key creation. `src/application` contains use cases and repository/provider interfaces. `src/infrastructure` contains Aviasales mapping and platform-independent repository logic. `src/platform` binds application interfaces to Telegram's `sdk`. `src/handlers` contains thin Telegram update entry points.
+`src/domain` содержит чистые модели, валидацию, сопоставление с подписками, определение снижения цены, нормализацию ссылок и создание внешнего ключа. `src/application` содержит сценарии использования и интерфейсы репозиториев и провайдеров. `src/infrastructure` содержит преобразование данных Aviasales и платформонезависимую логику репозиториев. `src/platform` связывает интерфейсы приложения с Telegram `sdk`. `src/handlers` содержит тонкие точки входа Telegram Updates.
 
-The local compiler produces deployable JavaScript in `telegram-dist`. A packaging step rewrites project imports to Telegram bare module names and ensures that only supported files are deployed. Tests run against TypeScript sources and in-memory fakes; platform adapters receive dedicated contract tests with mocked `sdk` boundaries.
+Локальный компилятор создаёт deploy-модули в `telegram-dist`. Этап упаковки преобразует внутренние импорты в bare module names Telegram и проверяет, что в результат попали только поддерживаемые файлы. Тесты выполняются по TypeScript-исходникам с in-memory реализациями; адаптеры платформы проверяются контрактными тестами на границах `sdk`.
 
-No production runtime dependency may be imported except `sdk`, `sdk/db`, `sdk/api`, `sdk/fetch`, `schema`, and modules produced under `lib/` or `handlers/`.
+Production-код не импортирует runtime-зависимости, кроме `sdk`, `sdk/db`, `sdk/api`, `sdk/fetch`, `schema` и собственных модулей, собранных в `lib/` или `handlers/`.
 
-## Domain Model and Database
+## Доменная модель и база данных
 
-The database contains the required tables:
+База содержит таблицы из ТЗ:
 
-- `users` stores Telegram identity, chat identity, optional contact data, default origin and preferred currency.
-- `tickets` stores normalized current offers, the stable external key, normalized and raw links, raw API payload, first/last seen timestamps, and activity state.
-- `ticket_price_history` stores a row only when a ticket price changes.
-- `subscriptions` stores route, date, price, direct-flight, baggage, and activity filters.
-- `notification_history` records successfully sent notifications and enforces uniqueness for user, subscription, ticket, and notified price.
-- `user_sessions` stores conversational flow state with a 30-minute expiry.
-- `sync_sources` stores enabled origin/currency pairs and starts with `TAS` plus `UZS`.
-- `sync_runs` records synchronization status and counters.
-- `sync_locks` provides a database-backed five-minute lease per origin/currency pair.
+- `users` — Telegram ID, chat ID, профиль, необязательный телефон, origin и валюта по умолчанию;
+- `tickets` — нормализованные предложения, стабильный внешний ключ, полная и очищенная ссылки, исходный payload, время первого и последнего обнаружения, признак активности;
+- `ticket_price_history` — новая запись только при изменении цены;
+- `subscriptions` — направление, диапазон дат, максимальная цена, прямой рейс, багаж и активность;
+- `notification_history` — только успешно отправленные уведомления с уникальностью по пользователю, подписке, билету и цене;
+- `user_sessions` — состояние диалогового сценария со сроком жизни 30 минут;
+- `sync_sources` — активные пары origin/currency с начальной парой `TAS` и `UZS`;
+- `sync_runs` — статус и счётчики каждого запуска;
+- `sync_locks` — блокировка на пять минут для каждой пары origin/currency.
 
-Dates and timestamps are represented by `Date` values in application code and timestamp integers in Telegram SQLite. Departure dates are normalized to `YYYY-MM-DD` strings because matching is date-based rather than timezone-instant-based. Currency amounts are non-negative safe integers in the smallest available whole unit returned by Aviasales; the MVP does not perform currency conversion.
+В приложении временные метки представлены объектами `Date`, а в Telegram SQLite — целыми timestamp-значениями. Дата вылета хранится строкой `YYYY-MM-DD`, потому что сопоставление выполняется по календарной дате, а не по моменту времени. Цена — неотрицательное безопасное целое число в единице, возвращаемой Aviasales; конвертация валют в MVP отсутствует.
 
-All Telegram IDs are stored as integers only if the runtime preserves JavaScript safe-integer precision for the value. Validation rejects unsafe integers rather than silently rounding them.
+Telegram ID сохраняется как целое число только при гарантии точного представления в JavaScript. Небезопасные целые значения отклоняются вместо неявного округления.
 
-## Aviasales Integration
+## Интеграция с Aviasales
 
-The provider accepts exactly:
+Провайдер реализует интерфейс:
 
 ```ts
 interface HotTicketsProvider {
@@ -88,75 +88,75 @@ interface HotTicketsProvider {
 }
 ```
 
-The URL builder validates the two required codes, normalizes their case, and applies the defaults specified in the requirements. It never issues a request with a missing or invalid origin or currency.
+URL builder проверяет два обязательных кода, нормализует регистр и добавляет параметры по умолчанию из ТЗ. Запрос с отсутствующим или некорректным origin/currency не отправляется.
 
-The HTTP client uses a 10-second timeout and at most three attempts. It retries network failures, timeouts, and HTTP `429`, `500`, `502`, `503`, and `504`. It does not retry other 4xx responses, malformed JSON, or structurally invalid responses.
+HTTP-клиент использует тайм-аут 10 секунд и не более трёх попыток. Повторяются сетевые ошибки, тайм-ауты и ответы `429`, `500`, `502`, `503`, `504`. Остальные ответы 4xx, некорректный JSON и неверная структура ответа не повторяются.
 
-Before the response mapper is finalized, a real response from the API is saved as a test fixture. The mapper accepts `unknown`, locates the actual offer array from that fixture, validates each offer independently, logs rejected offers, and continues processing valid offers. Fields absent from the real response are represented as `null` or `false` only when that interpretation is supported by the API payload; the implementation will not invent fields.
+До завершения mapper реальный ответ API сохраняется как тестовый fixture. Mapper принимает `unknown`, находит фактический массив предложений, проверяет каждый offer отдельно, логирует отклонённые записи и продолжает обработку корректных. Отсутствующие поля превращаются в `null` или `false` только тогда, когда такое значение подтверждается фактической структурой API; выдуманные поля не добавляются.
 
-Ticket links are trimmed and stripped of query parameters. The search code is extracted from the normalized `/search/<code>` path. The external key is SHA-256 over origin, destination, departure date, search code, and currency; price is excluded.
+Ссылка очищается от пробелов и query string. Поисковый код извлекается из нормализованного пути `/search/<code>`. Внешний ключ — SHA-256 от origin, destination, даты вылета, поискового кода и валюты; цена в ключ не входит.
 
-## Synchronization Flow
+## Сценарий синхронизации
 
-The application exposes `syncHotTickets(input)` as a trigger-independent use case. For each enabled source it:
+Приложение предоставляет независимый от trigger сценарий `syncHotTickets(input)`. Для каждого активного источника он:
 
-1. Validates origin and currency.
-2. Acquires the database lease `sync:hot-tickets:{origin}:{currency}` for five minutes.
-3. Creates a `running` sync record.
-4. Fetches and maps Aviasales offers.
-5. Inserts new tickets or updates existing tickets by external key.
-6. Updates `last_seen_at` and writes price history only when price changes.
-7. Marks tickets unseen for six hours as inactive.
-8. Matches new tickets and price drops against active subscriptions.
-9. Sends Telegram notifications and writes notification history only after successful delivery.
-10. Completes the sync record as `success` or `failed` and releases the lease in a `finally` path.
+1. Проверяет origin и currency.
+2. Атомарно получает блокировку `sync:hot-tickets:{origin}:{currency}` на пять минут.
+3. Создаёт запись `sync_runs` со статусом `running`.
+4. Получает и преобразует предложения Aviasales.
+5. Добавляет новый билет или обновляет существующий по внешнему ключу.
+6. Обновляет `last_seen_at` и записывает историю только при изменении цены.
+7. Помечает билеты, не встречавшиеся шесть часов, неактивными.
+8. Сопоставляет новые билеты и снижения цены с активными подписками.
+9. Отправляет Telegram-уведомления и создаёт историю уведомлений только после успешной доставки.
+10. Завершает `sync_runs` статусом `success` или `failed` и освобождает блокировку в `finally`.
 
-The lease acquisition is an atomic database operation. A competing invocation records or returns a `skipped` result. Ticket upserts and unique notification inserts provide a second idempotency layer if a caller retries after an uncertain response.
+Конкурирующий запуск возвращает или записывает результат `skipped`. Upsert билетов и уникальность уведомлений обеспечивают второй уровень идемпотентности, если инициатор повторит запрос после неопределённого результата.
 
-The trigger adapter is not part of the initial implementation milestone. Its eventual contract is to authenticate the caller, invoke the use case, and serialize the returned counters without containing synchronization logic.
+Trigger-адаптер не входит в первый этап реализации. Его будущая ответственность — проверить вызывающую сторону, запустить сценарий и сериализовать счётчики, не размещая внутри бизнес-логику синхронизации.
 
-## Telegram Interaction
+## Взаимодействие с Telegram
 
-Telegram entry points remain thin. `handlers/message.js` routes commands, text input, and contacts. `handlers/callback_query.js` routes inline keyboard actions. Shared routing and use cases live under deployed `lib/` modules.
+Точки входа остаются тонкими. `handlers/message.js` маршрутизирует команды, текст и контакты. `handlers/callback_query.js` маршрутизирует inline-кнопки. Общая маршрутизация и сценарии использования находятся в собранных модулях `lib/`.
 
-`/start` upserts the user by Telegram user ID, refreshes chat and profile fields, and displays the main menu. Contact handling requires `message.contact.user_id === message.from.id`.
+Команда `/start` создаёт или обновляет пользователя по Telegram ID, обновляет chat ID и профиль, затем показывает главное меню. Контакт принимается только при `message.contact.user_id === message.from.id`.
 
-Multi-step settings and subscription creation use `user_sessions`. Each transition validates the current flow and step, updates a JSON payload, refreshes expiry, and provides cancel behavior. Expired sessions are ignored and removed opportunistically.
+Настройки и создание подписки используют `user_sessions`. Каждый переход проверяет текущий flow и step, обновляет JSON payload, продлевает срок жизни и поддерживает отмену. Просроченные сессии игнорируются и удаляются при ближайшем обращении.
 
-Ticket listing defaults to active future tickets for the user's origin and currency, ordered by ascending price and limited to five. Callback data contains compact identifiers and actions rather than trusted business data; every callback reloads the resource and verifies ownership.
+Список билетов по умолчанию содержит активные будущие билеты для origin и валюты пользователя, сортируется по возрастанию цены и ограничивается пятью предложениями. Callback data содержит компактные идентификаторы и действия, но не считается доверенным источником бизнес-данных; обработчик повторно загружает ресурс и проверяет владельца.
 
-All displayed routes remain raw codes such as `TAS → IST`. The ticket button uses the normalized Aviasales URL and the message warns that the offer can change after navigation.
+Маршруты отображаются исходными кодами, например `TAS → IST`. Кнопка билета использует нормализованную ссылку Aviasales, а сообщение предупреждает, что предложение может измениться после перехода.
 
-## Error Handling and Security
+## Ошибки и безопасность
 
-Validation errors result in concise Russian user messages and do not expose stack traces. Unexpected failures are logged with operation identifiers and safe context, while secrets, authorization headers, contact phone values, and full raw Telegram updates are not logged.
+Ошибки валидации превращаются в короткие русские сообщения без stack trace. Неожиданные сбои логируются с идентификатором операции и безопасным контекстом. Секреты, authorization headers, телефоны и полные Telegram Updates не логируются.
 
-Repository methods verify subscription ownership before reading or modifying user-controlled resources. Database operations insert parent records before dependent records because foreign keys are unavailable. Unique constraints handle concurrent registration, ticket upserts, and notification deduplication.
+Репозитории проверяют владельца подписки до чтения и изменения управляемых пользователем ресурсов. Родительские записи создаются до зависимых, поскольку foreign keys отсутствуют. Уникальные ограничения защищают конкурентную регистрацию, upsert билетов и дедупликацию уведомлений.
 
-The future public synchronization endpoint must be HTTPS, accept only `POST`, compare a bearer secret, and return no internal error details. These requirements remain part of the design even though the trigger implementation is deferred.
+Будущий публичный sync endpoint должен использовать HTTPS, принимать только `POST`, проверять bearer secret и не возвращать внутренние детали ошибок. Эти требования сохраняются, хотя реализация trigger отложена.
 
-## Testing Strategy
+## Стратегия тестирования
 
-Vitest runs in strict TypeScript mode. Pure unit tests cover URL normalization, search-code extraction, external-key stability, code validation, URL construction, monetary and date validation, subscription matching, price-drop detection, retry classification, and notification deduplication.
+Vitest работает со strict TypeScript. Чистые unit-тесты покрывают нормализацию ссылки, извлечение поискового кода, стабильность внешнего ключа, валидацию кодов, создание URL, проверку цены и дат, сопоставление подписки, снижение цены, классификацию retry и дедупликацию уведомлений.
 
-Aviasales mapper tests use the captured real fixture plus malformed variants. A single invalid offer must not reject a valid response containing other offers.
+Тесты Aviasales mapper используют сохранённый реальный fixture и его некорректные варианты. Один неверный offer не должен отклонять ответ, содержащий другие корректные предложения.
 
-Integration tests use in-memory repositories and fake Telegram/Aviasales ports to cover user upsert, contact ownership, new and repeated synchronization, price history, notification delivery, duplicate suppression, inactive subscriptions, expired tickets, source locks, and failed sends. Platform contract tests verify that Telegram `sdk` adapters translate between application interfaces and asynchronous SDK calls.
+Интеграционные тесты с in-memory репозиториями и fake-реализациями Telegram и Aviasales покрывают user upsert, проверку контакта, новую и повторную синхронизацию, историю цены, отправку уведомления, подавление дублей, неактивные подписки, устаревшие билеты, блокировки источника и ошибку отправки. Контрактные тесты платформы проверяют перевод между интерфейсами приложения и асинхронными вызовами Telegram `sdk`.
 
-The release gate runs formatting checks, ESLint, `tsc --noEmit`, Vitest, the Telegram packaging step, and a static scan proving that deploy output contains only supported JavaScript modules and allowed runtime imports.
+Перед выпуском выполняются проверки форматирования, ESLint, `tsc --noEmit`, Vitest, сборка Telegram-модулей и статическая проверка, что deploy-результат содержит только поддерживаемые JavaScript-модули и разрешённые runtime-импорты.
 
-## Delivery Order
+## Порядок поставки
 
-Implementation proceeds in independently testable vertical slices:
+Работа разбивается на независимо проверяемые вертикальные этапы:
 
-1. Tooling, strict TypeScript configuration, test harness, and deploy packaging.
-2. Pure domain validation, ticket identity, dates, money, and subscription matching.
-3. Telegram `schema.ts` and repository contracts.
+1. Инструменты, strict TypeScript, тестовый каркас и deploy-сборка.
+2. Чистая доменная валидация, идентичность билета, даты, деньги и matching.
+3. Telegram `schema.ts` и контракты репозиториев.
 4. Aviasales URL/client/fixture/mapper.
-5. Ticket persistence, price history, leases, and synchronization orchestration.
-6. User registration, settings, sessions, and ticket browsing.
-7. Subscription flows, matching, Telegram notifications, and deduplication.
-8. Telegram Serverless adapters, deploy verification, and README.
-9. External cron trigger adapter after its hosting mechanism is selected.
+5. Хранение билетов, история цен, блокировки и orchestration синхронизации.
+6. Регистрация пользователей, настройки, сессии и просмотр билетов.
+7. Сценарии подписок, matching, Telegram-уведомления и дедупликация.
+8. Адаптеры Telegram Serverless, проверка deploy и README.
+9. Внешний cron-trigger после выбора способа его размещения.
 
-Each slice adds tests before implementation and must pass the full local verification suite before the next slice begins.
+Каждый этап сначала добавляет тесты и обязан пройти весь локальный набор проверок перед переходом к следующему.
