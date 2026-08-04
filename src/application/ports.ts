@@ -6,6 +6,7 @@ import type {
   StoredTicket,
   SyncResult,
   SyncSource,
+  SyncSourceKey,
   TelegramCallbackAnswer,
   TelegramMessageInput,
   TelegramProfileInput,
@@ -16,6 +17,7 @@ import type {
 
 export interface UserRepository {
   upsertTelegramProfile(input: TelegramProfileInput, now: Date): Promise<User>;
+  findById(userId: number): Promise<User | null>;
   findByTelegramUserId(telegramUserId: number): Promise<User | null>;
   updatePhone(userId: number, phoneNumber: string, now: Date): Promise<void>;
   updatePreferences(userId: number, originCode: string, currencyCode: string, now: Date): Promise<void>;
@@ -24,12 +26,12 @@ export interface UserRepository {
 export interface TicketRepository {
   findByExternalKey(externalKey: string): Promise<StoredTicket | null>;
   upsert(ticket: Ticket, observedAt: Date): Promise<{ stored: StoredTicket; previous: StoredTicket | null }>;
-  deactivateUnseenBefore(source: SyncSource, threshold: Date): Promise<number>;
+  deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number>;
   listActive(query: TicketQuery): Promise<readonly StoredTicket[]>;
 }
 
 export interface PriceHistoryRepository {
-  add(ticketId: number, price: number, observedAt: Date): Promise<void>;
+  addPrice(ticketId: number, price: number, observedAt: Date): Promise<void>;
 }
 
 export interface SubscriptionRepository {
@@ -48,7 +50,7 @@ export interface SessionRepository {
 
 export interface NotificationHistoryRepository {
   exists(userId: number, subscriptionId: number, ticketId: number, price: number): Promise<boolean>;
-  add(input: {
+  addNotification(input: {
     userId: number;
     subscriptionId: number;
     ticketId: number;
@@ -65,7 +67,7 @@ export interface SyncSourceRepository {
 }
 
 export interface SyncRunRepository {
-  start(source: SyncSource, startedAt: Date): Promise<number>;
+  start(source: SyncSourceKey, startedAt: Date): Promise<number>;
   complete(runId: number, result: SyncResult, finishedAt: Date): Promise<void>;
   fail(runId: number, errorMessage: string, finishedAt: Date): Promise<void>;
 }

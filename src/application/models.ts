@@ -36,10 +36,13 @@ export interface StoredTicket extends Ticket {
   updatedAt: Date;
 }
 
-export interface SyncSource {
-  id: number;
+export interface SyncSourceKey {
   originCode: string;
   currencyCode: string;
+}
+
+export interface SyncSource extends SyncSourceKey {
+  id: number;
   isEnabled: boolean;
 }
 
