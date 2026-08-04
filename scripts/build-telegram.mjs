@@ -1,11 +1,13 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
-import { relative, resolve, sep } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
 
 import { isAllowedRuntimeImport, validateDeployPath } from './build-policy.js';
 
-const projectRoot = resolve(import.meta.dirname, '..');
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const projectRoot = resolve(scriptDirectory, '..');
 const outputRoot = resolve(projectRoot, 'telegram-dist');
 const managedPaths = [
   resolve(outputRoot, 'schema.js'),

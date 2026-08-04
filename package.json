@@ -5,6 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-telegram.mjs",
+    "cloud:login": "node scripts/tgcloud.mjs login",
+    "cloud:status": "node scripts/tgcloud.mjs status",
+    "cloud:diff": "node scripts/tgcloud.mjs diff",
+    "cloud:push": "node scripts/tgcloud.mjs push",
+    "cloud:migrate": "node scripts/tgcloud.mjs migrate",
+    "cloud:run-sync": "node scripts/tgcloud.mjs run lib/sync-hot-tickets {}",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
