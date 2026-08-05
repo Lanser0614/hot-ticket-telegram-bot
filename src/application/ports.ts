@@ -21,7 +21,6 @@ export interface UserRepository {
   findById(userId: number): Promise<User | null>;
   findByTelegramUserId(telegramUserId: number): Promise<User | null>;
   updatePhone(userId: number, phoneNumber: string, now: Date): Promise<void>;
-  updatePreferences(userId: number, originCode: string, currencyCode: string, now: Date): Promise<void>;
   updateTicketPreferences(
     userId: number,
     tripClass: TripClass,

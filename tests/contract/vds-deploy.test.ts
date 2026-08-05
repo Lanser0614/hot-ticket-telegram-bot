@@ -33,4 +33,14 @@ describe('VDS deploy files', () => {
     expect(readme).toContain('https://deb.nodesource.com/setup_24.x');
     expect(readme).toContain('sudo apt install -y nodejs');
   });
+
+  it('описывает фиксированный каталог и локальный sync', () => {
+    const readme = readFileSync('README.md', 'utf8');
+    expect(readme).toContain('Ташкент (TAS)');
+    expect(readme).toContain('origin=TAS&currency=uzs');
+    expect(readme).toContain('/tickets IST');
+    expect(readme).toContain('Все направления из Ташкента');
+    expect(readme).toContain('cron');
+    expect(readme).toContain('внешний cron-сервис не нужны');
+  });
 });

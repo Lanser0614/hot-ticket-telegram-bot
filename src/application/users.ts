@@ -1,6 +1,5 @@
 import type { Clock, UserRepository } from './ports.js';
 import type { TelegramProfileInput, User } from './models.js';
-import { normalizeCurrencyCode, normalizeIataCode } from '../domain/codes.js';
 import { ValidationError } from '../domain/errors.js';
 import type { TripClass } from '../domain/travel-preferences.js';
 
@@ -45,20 +44,6 @@ export class UserService {
     const user = await this.users.findByTelegramUserId(telegramUserId);
     if (user === null) throw new ValidationError('Сначала выполните /start');
     return user;
-  }
-
-  public async updatePreferences(
-    telegramUserId: number,
-    originCode: string,
-    currencyCode: string
-  ): Promise<void> {
-    const user = await this.requireByTelegramUserId(telegramUserId);
-    await this.users.updatePreferences(
-      user.id,
-      normalizeIataCode(originCode),
-      normalizeCurrencyCode(currencyCode),
-      this.clock.now()
-    );
   }
 
   public async updateTicketPreferences(

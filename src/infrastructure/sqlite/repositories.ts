@@ -238,18 +238,6 @@ export class ApplicationRepositories implements
     );
   }
 
-  public async updatePreferences(
-    userId: number,
-    originCode: string,
-    currencyCode: string,
-    now: Date
-  ): Promise<void> {
-    await this.db.run(`
-      UPDATE users SET default_origin_code = :origin, preferred_currency_code = :currency,
-      updated_at = :now WHERE id = :id
-    `, { ':origin': originCode, ':currency': currencyCode, ':now': seconds(now), ':id': userId });
-  }
-
   public async updateTicketPreferences(
     userId: number,
     preferredTripClass: TripClass,

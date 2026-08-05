@@ -7,7 +7,16 @@ const configDirectory = dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'dist/**', 'telegram-dist/**', '.idea/**'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'telegram-dist/**',
+      '.codex/**',
+      '.idea/**',
+      'generated/**',
+      'scripts/**',
+      'src/constants/iata-locations-ru.ts'
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

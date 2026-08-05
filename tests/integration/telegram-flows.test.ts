@@ -177,8 +177,7 @@ describe('билеты и настройки', () => {
     expect(byPrice.map((ticket) => ticket.destinationCode)).toEqual(['DXB', 'IST']);
 
     const filtered = await fixture.tickets.listForTelegramUser(100, {
-      destinationCode: 'IST',
-      sort: 'departure_date_asc'
+      destinationCode: 'IST'
     });
     expect(filtered.map((ticket) => ticket.destinationCode)).toEqual(['IST']);
   });

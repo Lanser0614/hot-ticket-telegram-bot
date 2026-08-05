@@ -95,7 +95,7 @@ export function ticketNavigationKeyboard(
       })
     });
   }
-  if (page.hasNext) {
+  if (page.hasNext && page.offset + TICKET_PAGE_SIZE <= MAX_TICKET_OFFSET) {
     buttons.push({
       text: '➡️ Показать ещё',
       callback_data: encodeTicketCursor({

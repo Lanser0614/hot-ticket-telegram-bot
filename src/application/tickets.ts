@@ -1,4 +1,4 @@
-import type { StoredTicket, TicketSort } from './models.js';
+import type { StoredTicket } from './models.js';
 import type { Clock, TicketRepository, UserRepository } from './ports.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { assertIsoDate, dateInTimeZone } from '../domain/dates.js';
@@ -18,7 +18,6 @@ export interface TicketListingOptions {
   departureDateTo?: string;
   maxPrice?: number;
   directOnly?: boolean;
-  sort?: TicketSort;
   offset?: number;
 }
 

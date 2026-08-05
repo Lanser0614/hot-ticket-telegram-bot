@@ -39,7 +39,6 @@ async function fixture(): Promise<{
   const clock = new FixedClock();
   const store = new MemoryStore(clock);
   const user = store.seedUser({ telegramUserId: 100, telegramChatId: 200 });
-  await store.updatePreferences(user.id, 'ALA', 'USD', clock.now());
   await store.updateTicketPreferences(user.id, 'business', true, clock.now());
   return { store, service: new TicketService(store, store, clock) };
 }

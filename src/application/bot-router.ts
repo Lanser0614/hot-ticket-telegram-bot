@@ -138,6 +138,7 @@ export class TelegramBotRouter {
         const user = await this.dependencies.users.requireByTelegramUserId(query.from.id);
         const filtersChanged = cursor.tripClass !== user.preferredTripClass
           || cursor.baggageRequired !== user.baggageRequired;
+        await this.dependencies.sessions.cancel(user.id);
         await this.sendTicketPage(query.from.id, query.chatId, {
           ...(cursor.destinationCode === null ? {} : { destinationCode: cursor.destinationCode }),
           offset: filtersChanged ? 0 : cursor.offset
@@ -214,6 +215,7 @@ export class TelegramBotRouter {
           })
         });
       } else {
+        await this.dependencies.sessions.cancel(user.id);
         await this.resolveDestinationAndOpen(from.id, message.chat.id, destination);
       }
     } else if (command === '/subscriptions' || text === '🔔 Мои уведомления') {
