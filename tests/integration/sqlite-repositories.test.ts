@@ -42,6 +42,7 @@ function ticket(price = 1_850_000): Ticket {
     airlineCode: 'HY',
     airlineName: null,
     isDirect: true,
+    tripClass: 'economy',
     hasBaggage: false,
     ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
     rawTicketLink: '/TAS1509IST1?token=1',
@@ -73,10 +74,12 @@ describe('ApplicationRepositories on SQLite', () => {
     const updated = await repositories.upsert(ticket(1_700_000), now);
 
     expect(user.id).toBe(1);
+    expect(user).toMatchObject({ preferredTripClass: 'economy', baggageRequired: false });
     expect((await repositories.findByTelegramUserId(100))?.telegramChatId).toBe(201);
     expect(inserted.previous).toBeNull();
     expect(updated.previous?.price).toBe(1_850_000);
     expect(updated.stored.price).toBe(1_700_000);
+    expect(updated.stored.tripClass).toBe('economy');
     expect(await database.get('SELECT count(*) AS count FROM tickets')).toEqual({ count: 1 });
     database.close();
   });

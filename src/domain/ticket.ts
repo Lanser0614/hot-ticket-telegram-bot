@@ -3,6 +3,7 @@ import { assertIsoDate } from './dates.js';
 import { ValidationError } from './errors.js';
 import { assertMoney } from './money.js';
 import { sha256 } from './sha256.js';
+import type { TripClass } from './travel-preferences.js';
 
 const AVIASALES_HOSTS = new Set(['aviasales.uz', 'www.aviasales.uz']);
 const SEARCH_CODE_PATTERN = /^[A-Z0-9]+$/;
@@ -18,6 +19,7 @@ export interface Ticket {
   airlineCode: string | null;
   airlineName: string | null;
   isDirect: boolean;
+  tripClass: TripClass;
   hasBaggage: boolean;
   ticketLink: string;
   rawTicketLink: string | null;

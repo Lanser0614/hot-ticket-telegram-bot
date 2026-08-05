@@ -39,10 +39,11 @@ export class TicketService {
       destinationCode: options.destinationCode === undefined ? null : normalizeIataCode(options.destinationCode),
       maxPrice: options.maxPrice === undefined ? null : assertMoney(options.maxPrice),
       directOnly: options.directOnly ?? false,
+      tripClass: user.preferredTripClass,
+      baggageRequired: user.baggageRequired,
       sort: options.sort ?? 'price_asc',
       limit: 5,
       offset: 0
     });
   }
 }
-

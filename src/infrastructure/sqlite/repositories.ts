@@ -23,6 +23,7 @@ import type {
 import type { Subscription } from '../../domain/subscription.js';
 import type { TicketEventType } from '../../domain/ticket-events.js';
 import type { Ticket } from '../../domain/ticket.js';
+import type { TripClass } from '../../domain/travel-preferences.js';
 
 type Row = Readonly<Record<string, unknown>>;
 type Parameters = Readonly<Record<string, unknown>>;
@@ -73,6 +74,14 @@ function jsonValue(value: unknown): unknown {
   return JSON.parse(value) as unknown;
 }
 
+function tripClass(row: Row, key: string): TripClass {
+  const value = requiredString(row, key);
+  if (value !== 'economy' && value !== 'business') {
+    throw new TypeError(`База вернула некорректный класс ${key}`);
+  }
+  return value;
+}
+
 function mapUser(row: Row): User {
   return {
     id: requiredNumber(row, 'id'),
@@ -85,6 +94,8 @@ function mapUser(row: Row): User {
     languageCode: nullableString(row, 'language_code'),
     defaultOriginCode: requiredString(row, 'default_origin_code'),
     preferredCurrencyCode: requiredString(row, 'preferred_currency_code'),
+    preferredTripClass: tripClass(row, 'preferred_trip_class'),
+    baggageRequired: bool(row, 'baggage_required'),
     isActive: bool(row, 'is_active'),
     createdAt: timestamp(row, 'created_at'),
     updatedAt: timestamp(row, 'updated_at')
@@ -104,6 +115,7 @@ function mapTicket(row: Row): StoredTicket {
     airlineCode: nullableString(row, 'airline_code'),
     airlineName: nullableString(row, 'airline_name'),
     isDirect: bool(row, 'is_direct'),
+    tripClass: tripClass(row, 'trip_class'),
     hasBaggage: bool(row, 'has_baggage'),
     ticketLink: requiredString(row, 'ticket_link'),
     rawTicketLink: nullableString(row, 'raw_ticket_link'),
@@ -238,6 +250,24 @@ export class ApplicationRepositories implements
     `, { ':origin': originCode, ':currency': currencyCode, ':now': seconds(now), ':id': userId });
   }
 
+  public async updateTicketPreferences(
+    userId: number,
+    preferredTripClass: TripClass,
+    baggageRequired: boolean,
+    now: Date
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE users SET preferred_trip_class = :tripClass,
+        baggage_required = :baggageRequired, updated_at = :now
+      WHERE id = :id
+    `, {
+      ':tripClass': preferredTripClass,
+      ':baggageRequired': baggageRequired ? 1 : 0,
+      ':now': seconds(now),
+      ':id': userId
+    });
+  }
+
   public async findByExternalKey(externalKey: string): Promise<StoredTicket | null> {
     const row = await this.db.get(
       'SELECT * FROM tickets WHERE external_key = :externalKey',
@@ -262,6 +292,7 @@ export class ApplicationRepositories implements
       ':airlineCode': ticket.airlineCode,
       ':airlineName': ticket.airlineName,
       ':isDirect': ticket.isDirect ? 1 : 0,
+      ':tripClass': ticket.tripClass,
       ':hasBaggage': ticket.hasBaggage ? 1 : 0,
       ':ticketLink': ticket.ticketLink,
       ':rawTicketLink': ticket.rawTicketLink,
@@ -271,18 +302,19 @@ export class ApplicationRepositories implements
     await this.db.run(`
       INSERT INTO tickets (
         external_key, origin_code, destination_code, departure_date, departure_at,
-        price, currency_code, airline_code, airline_name, is_direct, has_baggage,
+        price, currency_code, airline_code, airline_name, is_direct, trip_class, has_baggage,
         ticket_link, raw_ticket_link, raw_payload, first_seen_at, last_seen_at,
         is_active, created_at, updated_at
       ) VALUES (
         :externalKey, :origin, :destination, :departureDate, :departureAt,
-        :price, :currency, :airlineCode, :airlineName, :isDirect, :hasBaggage,
+        :price, :currency, :airlineCode, :airlineName, :isDirect, :tripClass, :hasBaggage,
         :ticketLink, :rawTicketLink, :rawPayload, :now, :now, 1, :now, :now
       )
       ON CONFLICT(external_key) DO UPDATE SET
         departure_at = excluded.departure_at, price = excluded.price,
         airline_code = excluded.airline_code, airline_name = excluded.airline_name,
-        is_direct = excluded.is_direct, has_baggage = excluded.has_baggage,
+        is_direct = excluded.is_direct, trip_class = excluded.trip_class,
+        has_baggage = excluded.has_baggage,
         ticket_link = excluded.ticket_link, raw_ticket_link = excluded.raw_ticket_link,
         raw_payload = excluded.raw_payload, last_seen_at = excluded.last_seen_at,
         is_active = 1, updated_at = excluded.updated_at
@@ -313,11 +345,13 @@ export class ApplicationRepositories implements
       'currency_code = :currency',
       'is_active = 1',
       'departure_date >= :dateFrom'
+      ,'trip_class = :tripClass'
     ];
     const parameters: Record<string, unknown> = {
       ':origin': query.originCode,
       ':currency': query.currencyCode,
       ':dateFrom': query.departureDateFrom,
+      ':tripClass': query.tripClass,
       ':limit': query.limit,
       ':offset': query.offset
     };
@@ -334,6 +368,7 @@ export class ApplicationRepositories implements
       parameters[':maxPrice'] = query.maxPrice;
     }
     if (query.directOnly) conditions.push('is_direct = 1');
+    if (query.baggageRequired) conditions.push('has_baggage = 1');
     const order = query.sort === 'departure_date_asc'
       ? 'departure_date ASC, price ASC'
       : query.sort === 'recently_added'
@@ -509,7 +544,8 @@ export class ApplicationRepositories implements
     await this.db.run(`
       INSERT INTO sync_sources (origin_code, currency_code, is_enabled, created_at, updated_at)
       VALUES ('TAS', 'UZS', 1, :now, :now)
-      ON CONFLICT(origin_code, currency_code) DO NOTHING
+      ON CONFLICT(origin_code, currency_code) DO UPDATE SET
+        is_enabled = 1, updated_at = excluded.updated_at
     `, { ':now': seconds(now) });
   }
 

@@ -38,6 +38,7 @@ describe('mapHotOffersResponse', () => {
       airlineCode: 'HY',
       airlineName: null,
       isDirect: true,
+      tripClass: 'economy',
       hasBaggage: false,
       ticketLink: 'https://www.aviasales.uz/search/TAS0908IST1'
     });
@@ -57,6 +58,7 @@ describe('mapHotOffersResponse', () => {
               currency: 'uzs',
               depart_date: '2026-09-15',
               depart_date_time: '2026-09-15 16:50',
+              trip_class: 1,
               with_baggage: false,
               number_of_changes: 1,
               airline: 'HY',
@@ -77,4 +79,3 @@ describe('mapHotOffersResponse', () => {
     expect(() => mapHotOffersResponse(value, new RecordingLogger())).toThrow(AviasalesResponseError);
   });
 });
-

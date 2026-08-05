@@ -8,6 +8,7 @@ import {
   normalizeTicketLink,
   type Ticket
 } from '../../domain/ticket.js';
+import type { TripClass } from '../../domain/travel-preferences.js';
 import {
   isRecord,
   requireBoolean,
@@ -37,6 +38,13 @@ function parseDepartureAt(value: unknown): string | null {
 function parseOptionalAirline(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   return requireString(value, 'airline').trim().toUpperCase();
+}
+
+function mapTripClass(value: unknown): TripClass {
+  const tripClass = requireNumber(value, 'trip_class');
+  if (tripClass === 1) return 'economy';
+  if (tripClass === 2) return 'business';
+  throw new TypeError('Поле trip_class содержит неизвестный класс');
 }
 
 function mapDirection(direction: unknown): Ticket {
@@ -75,6 +83,7 @@ function mapDirection(direction: unknown): Ticket {
     airlineCode: parseOptionalAirline(price.airline),
     airlineName: null,
     isDirect: numberOfChanges === 0,
+    tripClass: mapTripClass(price.trip_class),
     hasBaggage: requireBoolean(price.with_baggage, 'with_baggage'),
     ticketLink,
     rawTicketLink,
@@ -100,4 +109,3 @@ export function mapHotOffersResponse(value: unknown, logger: Logger): Ticket[] {
   });
   return tickets;
 }
-

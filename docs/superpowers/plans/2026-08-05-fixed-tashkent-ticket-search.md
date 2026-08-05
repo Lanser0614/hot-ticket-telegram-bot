@@ -142,7 +142,7 @@ rtk git commit -m "feat: add fixed travel catalog and location lookup"
 - Modify: `src/domain/ticket.ts`
 - Modify: `src/application/models.ts`
 - Modify: `src/application/ports.ts`
-- Create: `migrations/002_fixed_tashkent_search.sql`
+- Create: `migrations/002_fixed-tashkent-search.sql`
 - Modify: `src/infrastructure/sqlite/repositories.ts`
 - Modify: `src/infrastructure/memory/store.ts`
 - Modify: `tests/unit/domain/ticket.test.ts`
@@ -209,7 +209,7 @@ Expected: FAIL — schema и strict model ещё не знают новые по
 
 - [ ] **Step 4: добавить миграцию**
 
-`002_fixed_tashkent_search.sql`:
+`002_fixed-tashkent-search.sql`:
 
 ```sql
 ALTER TABLE users ADD COLUMN preferred_trip_class TEXT NOT NULL DEFAULT 'economy'
@@ -253,7 +253,7 @@ Expected: PASS.
 - [ ] **Step 8: создать коммит**
 
 ```bash
-rtk git add migrations/002_fixed_tashkent_search.sql src/domain/ticket.ts src/application/models.ts src/application/ports.ts src/infrastructure/sqlite/repositories.ts src/infrastructure/memory/store.ts tests/unit/domain/ticket.test.ts tests/unit/domain/subscription.test.ts tests/unit/domain/ticket-events.test.ts tests/integration/sqlite-migrations.test.ts tests/integration/sqlite-repositories.test.ts tests/integration/sync-hot-tickets.test.ts tests/integration/telegram-flows.test.ts
+rtk git add migrations/002_fixed-tashkent-search.sql src/domain/ticket.ts src/application/models.ts src/application/ports.ts src/infrastructure/sqlite/repositories.ts src/infrastructure/memory/store.ts tests/unit/domain/ticket.test.ts tests/unit/domain/subscription.test.ts tests/unit/domain/ticket-events.test.ts tests/integration/sqlite-migrations.test.ts tests/integration/sqlite-repositories.test.ts tests/integration/sync-hot-tickets.test.ts tests/integration/telegram-flows.test.ts
 rtk git diff --cached --check
 rtk git commit -m "feat: persist ticket class and user filters"
 ```

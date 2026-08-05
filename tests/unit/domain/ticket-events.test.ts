@@ -14,6 +14,7 @@ const ticket: Ticket = {
   airlineCode: null,
   airlineName: null,
   isDirect: true,
+  tripClass: 'economy',
   hasBaggage: true,
   ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
   rawTicketLink: null,

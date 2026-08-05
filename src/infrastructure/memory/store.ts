@@ -25,6 +25,7 @@ import type { Subscription } from '../../domain/subscription.js';
 import { matchesSubscription } from '../../domain/subscription.js';
 import type { TicketEventType } from '../../domain/ticket-events.js';
 import type { Ticket } from '../../domain/ticket.js';
+import type { TripClass } from '../../domain/travel-preferences.js';
 
 interface PriceHistoryRecord {
   ticketId: number;
@@ -102,6 +103,8 @@ export class MemoryStore implements
       languageCode: null,
       defaultOriginCode: 'TAS',
       preferredCurrencyCode: 'UZS',
+      preferredTripClass: 'economy',
+      baggageRequired: false,
       isActive: true,
       createdAt: now,
       updatedAt: now
@@ -142,6 +145,8 @@ export class MemoryStore implements
       phoneNumber: null,
       defaultOriginCode: 'TAS',
       preferredCurrencyCode: 'UZS',
+      preferredTripClass: 'economy',
+      baggageRequired: false,
       isActive: true,
       createdAt: now,
       updatedAt: now
@@ -176,6 +181,21 @@ export class MemoryStore implements
     if (user !== undefined) Object.assign(user, {
       defaultOriginCode: originCode,
       preferredCurrencyCode: currencyCode,
+      updatedAt: now
+    });
+    return Promise.resolve();
+  }
+
+  public updateTicketPreferences(
+    userId: number,
+    preferredTripClass: TripClass,
+    baggageRequired: boolean,
+    now: Date
+  ): Promise<void> {
+    const user = this.users.find((item) => item.id === userId);
+    if (user !== undefined) Object.assign(user, {
+      preferredTripClass,
+      baggageRequired,
       updatedAt: now
     });
     return Promise.resolve();
@@ -240,6 +260,8 @@ export class MemoryStore implements
       && (query.destinationCode === null || ticket.destinationCode === query.destinationCode)
       && (query.maxPrice === null || ticket.price <= query.maxPrice)
       && (!query.directOnly || ticket.isDirect)
+      && ticket.tripClass === query.tripClass
+      && (!query.baggageRequired || ticket.hasBaggage)
     ));
     items.sort((left, right) => {
       if (query.sort === 'departure_date_asc') return left.departureDate.localeCompare(right.departureDate);
@@ -329,7 +351,12 @@ export class MemoryStore implements
   }
 
   public ensureInitialSource(now: Date): Promise<void> {
-    if (!this.syncSources.some((item) => item.originCode === 'TAS' && item.currencyCode === 'UZS')) {
+    const existing = this.syncSources.find((item) => (
+      item.originCode === 'TAS' && item.currencyCode === 'UZS'
+    ));
+    if (existing !== undefined) {
+      existing.isEnabled = true;
+    } else {
       this.syncSources.push({
         id: this.nextSyncSourceId++,
         originCode: 'TAS',

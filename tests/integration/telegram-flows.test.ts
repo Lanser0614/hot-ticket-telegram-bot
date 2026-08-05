@@ -53,6 +53,7 @@ function createTicket(overrides: Partial<Ticket>): Ticket {
     airlineCode: null,
     airlineName: null,
     isDirect: false,
+    tripClass: 'economy',
     hasBaggage: false,
     ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
     rawTicketLink: null,

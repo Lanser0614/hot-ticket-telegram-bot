@@ -80,6 +80,7 @@ function createTicket(price = 1_850_000): Ticket {
     airlineCode: 'HY',
     airlineName: null,
     isDirect: false,
+    tripClass: 'economy',
     hasBaggage: false,
     ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
     rawTicketLink: '/TAS1509IST1?token=1',

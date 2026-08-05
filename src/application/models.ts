@@ -1,6 +1,7 @@
 import type { Subscription } from '../domain/subscription.js';
 import type { TicketEventType } from '../domain/ticket-events.js';
 import type { Ticket } from '../domain/ticket.js';
+import type { TripClass } from '../domain/travel-preferences.js';
 
 export interface User {
   id: number;
@@ -13,6 +14,8 @@ export interface User {
   languageCode: string | null;
   defaultOriginCode: string;
   preferredCurrencyCode: string;
+  preferredTripClass: TripClass;
+  baggageRequired: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -56,6 +59,8 @@ export interface TicketQuery {
   destinationCode: string | null;
   maxPrice: number | null;
   directOnly: boolean;
+  tripClass: TripClass;
+  baggageRequired: boolean;
   sort: TicketSort;
   limit: number;
   offset: number;

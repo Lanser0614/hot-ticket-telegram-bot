@@ -18,6 +18,7 @@ const ticket: Ticket = {
   airlineCode: 'HY',
   airlineName: null,
   isDirect: false,
+  tripClass: 'economy',
   hasBaggage: false,
   ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
   rawTicketLink: '/TAS1509IST1?token=1',
@@ -79,4 +80,3 @@ describe('matchesSubscription', () => {
     })).toMatchObject({ originCode: 'TAS', destinationCode: 'IST', currencyCode: 'UZS' });
   });
 });
-

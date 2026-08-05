@@ -1,6 +1,7 @@
 import type { Subscription } from '../domain/subscription.js';
 import type { TicketEventType } from '../domain/ticket-events.js';
 import type { Ticket } from '../domain/ticket.js';
+import type { TripClass } from '../domain/travel-preferences.js';
 import type {
   NotificationInput,
   StoredTicket,
@@ -21,6 +22,12 @@ export interface UserRepository {
   findByTelegramUserId(telegramUserId: number): Promise<User | null>;
   updatePhone(userId: number, phoneNumber: string, now: Date): Promise<void>;
   updatePreferences(userId: number, originCode: string, currencyCode: string, now: Date): Promise<void>;
+  updateTicketPreferences(
+    userId: number,
+    tripClass: TripClass,
+    baggageRequired: boolean,
+    now: Date
+  ): Promise<void>;
 }
 
 export interface TicketRepository {
