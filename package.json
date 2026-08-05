@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "generate:iata": "node scripts/generate-iata-map.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -27,6 +28,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.2"
+    "better-sqlite3": "^13.0.2",
+    "csv-parse": "^7.0.2"
   }
 }
