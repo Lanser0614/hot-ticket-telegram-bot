@@ -67,6 +67,5 @@ export function matchesSubscription(ticket: Ticket, subscription: Subscription):
       subscription.departureDateTo
     )
     && (subscription.maxPrice === null || ticket.price <= subscription.maxPrice)
-    && (!subscription.directOnly || ticket.isDirect)
-    && (!subscription.baggageRequired || ticket.hasBaggage);
+    && (!subscription.directOnly || ticket.isDirect);
 }

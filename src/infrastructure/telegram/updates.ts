@@ -79,9 +79,16 @@ function parseCallbackQuery(value: unknown): TelegramCallbackQuery {
   const id = optionalString(input.id, 'callback_query.id');
   if (id === undefined) throw new TypeError('Некорректный Telegram callback_query.id');
   const data = optionalString(input.data, 'callback_query.data');
+  let chatId: number | null = null;
+  if (input.message !== undefined) {
+    const message = record(input.message, 'callback_query.message');
+    const chat = record(message.chat, 'callback_query.message.chat');
+    chatId = integer(chat.id, 'callback_query.message.chat.id');
+  }
   return {
     id,
     from: { id: integer(from.id, 'callback_query.from.id') },
+    chatId,
     ...(data === undefined ? {} : { data })
   };
 }

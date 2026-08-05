@@ -1,4 +1,6 @@
 import type { StoredTicket } from '../application/models.js';
+import { formatLocationLabel } from '../domain/locations.js';
+import { presentTripClass } from '../domain/travel-preferences.js';
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -13,14 +15,14 @@ export function presentTicket(ticket: StoredTicket): string {
   }).format(new Date(`${ticket.departureDate}T00:00:00+05:00`));
   const price = new Intl.NumberFormat('ru-RU').format(ticket.price);
   return [
-    `✈️ <b>${escapeHtml(ticket.originCode)} → ${escapeHtml(ticket.destinationCode)}</b>`,
+    `✈️ <b>${escapeHtml(formatLocationLabel(ticket.originCode))} → ${escapeHtml(formatLocationLabel(ticket.destinationCode))}</b>`,
     '',
     `📅 Вылет: ${departure}`,
     `💰 Цена: ${price} ${escapeHtml(ticket.currencyCode)}`,
     `🛫 Рейс: ${ticket.isDirect ? 'прямой' : 'с пересадкой'}`,
+    `💺 Класс: ${presentTripClass(ticket.tripClass)}`,
     `🧳 Багаж: ${ticket.hasBaggage ? 'включён' : 'не включён'}`,
     '',
     'Предложение может измениться после перехода на сайт.'
   ].join('\n');
 }
-

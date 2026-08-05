@@ -63,7 +63,7 @@ function update(updateId: number, kind: 'message' | 'callback' | 'unsupported'):
     updateId,
     message: kind === 'message' ? { chat: { id: 1 }, text: '/start' } : null,
     callbackQuery: kind === 'callback'
-      ? { id: 'callback', from: { id: 1 }, data: 'subscription:disable:3' }
+      ? { id: 'callback', from: { id: 1 }, chatId: null, data: 'subscription:disable:3' }
       : null
   };
 }

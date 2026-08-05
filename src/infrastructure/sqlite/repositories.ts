@@ -396,15 +396,13 @@ export class ApplicationRepositories implements
         AND departure_date_from <= :departureDate AND departure_date_to >= :departureDate
         AND (max_price IS NULL OR max_price >= :price)
         AND (direct_only = 0 OR :isDirect = 1)
-        AND (baggage_required = 0 OR :hasBaggage = 1)
     `, {
       ':origin': ticket.originCode,
       ':currency': ticket.currencyCode,
       ':destination': ticket.destinationCode,
       ':departureDate': ticket.departureDate,
       ':price': ticket.price,
-      ':isDirect': ticket.isDirect ? 1 : 0,
-      ':hasBaggage': ticket.hasBaggage ? 1 : 0
+      ':isDirect': ticket.isDirect ? 1 : 0
     });
     return rows.map(mapSubscription);
   }

@@ -4,6 +4,8 @@ import type {
   TelegramMessageInput
 } from '../../application/models.js';
 import type { TelegramGateway, TicketNotifier } from '../../application/ports.js';
+import { formatLocationLabel } from '../../domain/locations.js';
+import { presentTripClass } from '../../domain/travel-preferences.js';
 import {
   parseTelegramUpdate,
   parseTelegramUpdateId,
@@ -88,10 +90,11 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
     const text = [
       title,
       '',
-      `✈️ ${escapeHtml(input.ticket.originCode)} → ${escapeHtml(input.ticket.destinationCode)}`,
+      `✈️ ${escapeHtml(formatLocationLabel(input.ticket.originCode))} → ${escapeHtml(formatLocationLabel(input.ticket.destinationCode))}`,
       `📅 Вылет: ${escapeHtml(input.ticket.departureDate)}`,
       `💰 Цена: ${new Intl.NumberFormat('ru-RU').format(input.ticket.price)} ${escapeHtml(input.ticket.currencyCode)}`,
       `🛫 ${input.ticket.isDirect ? 'Прямой рейс' : 'С пересадкой'}`,
+      `💺 ${presentTripClass(input.ticket.tripClass)}`,
       `🧳 ${input.ticket.hasBaggage ? 'С багажом' : 'Без багажа'}`
     ].join('\n');
     const result = await this.sendMessage({

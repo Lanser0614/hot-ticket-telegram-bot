@@ -60,10 +60,13 @@ describe('matchesSubscription', () => {
     { departureDateTo: '2026-09-14' },
     { maxPrice: 1_849_999 },
     { directOnly: true },
-    { baggageRequired: true },
     { isActive: false }
   ])('отклоняет несовпадение %j', (override) => {
     expect(matchesSubscription(ticket, { ...subscription, ...override })).toBe(false);
+  });
+
+  it('игнорирует legacy baggage_required подписки', () => {
+    expect(matchesSubscription(ticket, { ...subscription, baggageRequired: true })).toBe(true);
   });
 
   it('проверяет границы диапазона включительно', () => {

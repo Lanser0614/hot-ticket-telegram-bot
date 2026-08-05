@@ -130,14 +130,35 @@ describe('регистрация и профиль', () => {
 });
 
 describe('билеты и настройки', () => {
-  it('показывает билеты по кнопке меню без разбора текста кнопки как IATA', async () => {
+  it('запрашивает направление и принимает русское название', async () => {
     const fixture = createFixture();
     await fixture.router.handleMessage(startMessage);
     await fixture.store.upsert(createTicket({}), fixture.clock.now());
 
     await fixture.router.handleMessage({ ...startMessage, text: '🔥 Горящие билеты' });
+    expect(fixture.gateway.messages.at(-1)?.text)
+      .toBe('Вылет из Ташкента (TAS). Куда летим?');
+    expect(JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup))
+      .toContain('Все направления из Ташкента');
+    await fixture.router.handleMessage({ ...startMessage, text: 'Стамбул' });
 
-    expect(fixture.gateway.messages.at(-1)?.text).toContain('<b>TAS → IST</b>');
+    expect(fixture.gateway.messages.at(-2)?.text)
+      .toContain('<b>Ташкент (TAS) → Стамбул (IST)</b>');
+    expect(fixture.gateway.messages.at(-1)?.text).toBe('Показано 1–1');
+  });
+
+  it('открывает /tickets IST без вопроса и безопасно обрабатывает неизвестный город', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    await fixture.store.upsert(createTicket({}), fixture.clock.now());
+
+    await fixture.router.handleMessage({ ...startMessage, text: '/tickets IST' });
+    expect(fixture.gateway.messages.some((message) => message.text.includes('Стамбул (IST)'))).toBe(true);
+
+    await fixture.router.handleMessage({ ...startMessage, text: '/tickets' });
+    await fixture.router.handleMessage({ ...startMessage, text: 'Стамблл' });
+    expect(fixture.gateway.messages.at(-1)?.text)
+      .toBe('Город не найден. Введите название или IATA-код, например Стамбул или IST.');
   });
 
   it('сортирует и фильтрует активные билеты', async () => {
@@ -162,16 +183,56 @@ describe('билеты и настройки', () => {
     expect(filtered.map((ticket) => ticket.destinationCode)).toEqual(['IST']);
   });
 
-  it('обновляет origin и currency через settings flow', async () => {
+  it('обновляет класс и багаж через settings flow', async () => {
     const fixture = createFixture();
     await fixture.router.handleMessage(startMessage);
     await fixture.router.handleMessage({ ...startMessage, text: '/settings' });
-    await fixture.router.handleMessage({ ...startMessage, text: 'SKD' });
-    await fixture.router.handleMessage({ ...startMessage, text: 'USD' });
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Класс перелёта');
+    await fixture.router.handleMessage({ ...startMessage, text: 'Бизнес' });
+    await fixture.router.handleMessage({ ...startMessage, text: 'Только с багажом' });
 
     expect(await fixture.store.findByTelegramUserId(100)).toMatchObject({
-      defaultOriginCode: 'SKD',
-      preferredCurrencyCode: 'USD'
+      defaultOriginCode: 'TAS',
+      preferredCurrencyCode: 'UZS',
+      preferredTripClass: 'business',
+      baggageRequired: true
+    });
+  });
+
+  it('показывает фиксированные TAS/UZS и текущие фильтры в профиле', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    await fixture.users.updateTicketPreferences(100, 'business', true);
+    await fixture.router.handleMessage({ ...startMessage, text: '/profile' });
+
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Город вылета: Ташкент (TAS)');
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Валюта: UZS');
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Класс: Бизнес');
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Багаж: Только с багажом');
+  });
+
+  it('открывает следующую страницу callback-ом текущего пользователя', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    for (let index = 1; index <= 11; index += 1) {
+      await fixture.store.upsert(createTicket({
+        externalKey: `ticket-${index}`,
+        price: 1_000_000 + index,
+        ticketLink: `https://www.aviasales.uz/search/TAS1509IST${index}`
+      }), fixture.clock.now());
+    }
+
+    await fixture.router.handleCallbackQuery({
+      id: 'tickets-page-2',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'tickets:ALL:10:E0'
+    });
+
+    expect(fixture.gateway.messages.at(-2)?.text).toContain('Стамбул (IST)');
+    expect(fixture.gateway.messages.at(-1)?.text).toBe('Показано 11–11');
+    expect(fixture.gateway.callbackAnswers.at(-1)).toEqual({
+      callbackQueryId: 'tickets-page-2'
     });
   });
 });
@@ -182,8 +243,7 @@ describe('подписки и сессии', () => {
     await fixture.router.handleMessage(startMessage);
     for (const text of [
       '/new_subscription',
-      'TAS',
-      'IST',
+      'Стамбул',
       '2026-09-10',
       '2026-09-20',
       '2000000',
@@ -234,14 +294,11 @@ describe('подписки и сессии', () => {
     }
 
     await expect(fixture.subscriptions.createForUser(user.id, {
-      originCode: 'TAS',
       destinationCode: 'IST',
-      currencyCode: 'UZS',
       departureDateFrom: '2026-09-10',
       departureDateTo: '2026-09-20',
       maxPrice: null,
-      directOnly: false,
-      baggageRequired: false
+      directOnly: false
     })).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -265,6 +322,7 @@ describe('подписки и сессии', () => {
     await fixture.router.handleCallbackQuery({
       id: 'callback-1',
       from: { id: stranger.telegramUserId },
+      chatId: stranger.telegramChatId,
       data: `subscription:disable:${subscription.id}`
     });
 

@@ -6,6 +6,19 @@ import {
   type SubscriptionDraft
 } from '../domain/subscription.js';
 import { ValidationError } from '../domain/errors.js';
+import {
+  DEFAULT_CURRENCY_CODE,
+  DEFAULT_ORIGIN_CODE
+} from '../domain/travel-preferences.js';
+
+export type CreateSubscriptionInput = Pick<
+  SubscriptionDraft,
+  | 'destinationCode'
+  | 'departureDateFrom'
+  | 'departureDateTo'
+  | 'maxPrice'
+  | 'directOnly'
+>;
 
 export class SubscriptionService {
   public constructor(
@@ -16,12 +29,18 @@ export class SubscriptionService {
 
   public async createForUser(
     userId: number,
-    input: Omit<SubscriptionDraft, 'userId'>
+    input: CreateSubscriptionInput
   ): Promise<Subscription> {
     if (await this.subscriptions.countActiveByUser(userId) >= 20) {
       throw new ValidationError('Достигнут лимит 20 активных подписок');
     }
-    return this.subscriptions.create(validateSubscriptionDraft({ ...input, userId }), this.clock.now());
+    return this.subscriptions.create(validateSubscriptionDraft({
+      ...input,
+      userId,
+      originCode: DEFAULT_ORIGIN_CODE,
+      currencyCode: DEFAULT_CURRENCY_CODE,
+      baggageRequired: false
+    }), this.clock.now());
   }
 
   public async listForTelegramUser(telegramUserId: number): Promise<readonly Subscription[]> {
@@ -43,4 +62,3 @@ export class SubscriptionService {
     return user;
   }
 }
-

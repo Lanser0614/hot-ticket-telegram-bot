@@ -14,6 +14,7 @@ import type {
 } from './ports.js';
 import { validateHotOffersInput } from '../domain/codes.js';
 import { detectTicketEvent } from '../domain/ticket-events.js';
+import { matchesUserTicketPreferences } from '../domain/travel-preferences.js';
 
 interface SyncTicketsDependencies {
   provider: HotTicketsProvider;
@@ -75,14 +76,6 @@ export class SyncTicketsService {
 
         const subscriptions = await this.dependencies.subscriptionRepository.findMatching(stored);
         for (const subscription of subscriptions) {
-          const alreadySent = await this.dependencies.notificationHistoryRepository.exists(
-            subscription.userId,
-            subscription.id,
-            stored.id,
-            stored.price
-          );
-          if (alreadySent) continue;
-
           const user = await this.dependencies.userRepository.findById(subscription.userId);
           if (user === null) {
             this.dependencies.logger.warn('notification_user_not_found', {
@@ -91,6 +84,15 @@ export class SyncTicketsService {
             });
             continue;
           }
+          if (!matchesUserTicketPreferences(stored, user)) continue;
+
+          const alreadySent = await this.dependencies.notificationHistoryRepository.exists(
+            subscription.userId,
+            subscription.id,
+            stored.id,
+            stored.price
+          );
+          if (alreadySent) continue;
 
           const sent = await this.dependencies.notifier.send({ user, subscription, ticket: stored, type: event });
           await this.dependencies.notificationHistoryRepository.addNotification({
@@ -126,4 +128,3 @@ export class SyncTicketsService {
     }
   }
 }
-

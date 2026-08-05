@@ -227,6 +227,52 @@ describe('SyncTicketsService', () => {
     expect(fixture.notifier.sent).toHaveLength(0);
   });
 
+  it('не уведомляет о билете другого класса', async () => {
+    const fixture = createFixture();
+    const user = await fixture.store.findByTelegramUserId(100);
+    await fixture.store.updateTicketPreferences(user?.id ?? 0, 'business', false, fixture.clock.now());
+    fixture.provider.tickets.set('TAS|UZS', [createTicket()]);
+
+    await fixture.service.execute(source);
+
+    expect(fixture.notifier.sent).toHaveLength(0);
+    expect(fixture.store.notificationRecords).toHaveLength(0);
+  });
+
+  it('применяет актуальное требование багажа владельца', async () => {
+    const withoutBaggage = createFixture();
+    const firstUser = await withoutBaggage.store.findByTelegramUserId(100);
+    await withoutBaggage.store.updateTicketPreferences(
+      firstUser?.id ?? 0,
+      'business',
+      true,
+      withoutBaggage.clock.now()
+    );
+    withoutBaggage.provider.tickets.set('TAS|UZS', [{
+      ...createTicket(),
+      tripClass: 'business',
+      hasBaggage: false
+    }]);
+    await withoutBaggage.service.execute(source);
+    expect(withoutBaggage.notifier.sent).toHaveLength(0);
+
+    const withBaggage = createFixture();
+    const secondUser = await withBaggage.store.findByTelegramUserId(100);
+    await withBaggage.store.updateTicketPreferences(
+      secondUser?.id ?? 0,
+      'business',
+      true,
+      withBaggage.clock.now()
+    );
+    withBaggage.provider.tickets.set('TAS|UZS', [{
+      ...createTicket(),
+      tripClass: 'business',
+      hasBaggage: true
+    }]);
+    await withBaggage.service.execute(source);
+    expect(withBaggage.notifier.sent).toHaveLength(1);
+  });
+
   it('деактивирует билет, не встречавшийся шесть часов', async () => {
     const fixture = createFixture();
     fixture.provider.tickets.set('TAS|UZS', [createTicket()]);

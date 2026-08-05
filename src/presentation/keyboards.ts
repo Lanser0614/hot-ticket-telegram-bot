@@ -22,3 +22,7 @@ export function subscriptionKeyboard(subscriptionId: number): unknown {
   };
 }
 
+export {
+  allDestinationsKeyboard,
+  ticketNavigationKeyboard
+} from './ticket-pagination.js';

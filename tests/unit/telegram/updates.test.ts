@@ -27,12 +27,29 @@ describe('parseTelegramUpdate', () => {
   it('разбирает callback query', () => {
     expect(parseTelegramUpdate({
       update_id: 8,
-      callback_query: { id: 'callback-1', from: { id: 100 }, data: 'subscription:disable:3' }
+      callback_query: {
+        id: 'callback-1',
+        from: { id: 100 },
+        message: { chat: { id: 200 } },
+        data: 'subscription:disable:3'
+      }
     })).toEqual({
       updateId: 8,
       message: null,
-      callbackQuery: { id: 'callback-1', from: { id: 100 }, data: 'subscription:disable:3' }
+      callbackQuery: {
+        id: 'callback-1',
+        from: { id: 100 },
+        chatId: 200,
+        data: 'subscription:disable:3'
+      }
     });
+  });
+
+  it('возвращает null chatId для inline callback', () => {
+    expect(parseTelegramUpdate({
+      update_id: 9,
+      callback_query: { id: 'callback-2', from: { id: 100 }, data: 'tickets:ALL:0:E0' }
+    }).callbackQuery).toMatchObject({ chatId: null });
   });
 
   it('пропускает неподдерживаемый payload, сохраняя update id', () => {
