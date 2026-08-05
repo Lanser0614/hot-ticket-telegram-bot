@@ -264,9 +264,18 @@ export class MemoryStore implements
       && (!query.baggageRequired || ticket.hasBaggage)
     ));
     items.sort((left, right) => {
-      if (query.sort === 'departure_date_asc') return left.departureDate.localeCompare(right.departureDate);
-      if (query.sort === 'recently_added') return right.firstSeenAt.getTime() - left.firstSeenAt.getTime();
-      return left.price - right.price;
+      if (query.sort === 'departure_date_asc') {
+        return left.departureDate.localeCompare(right.departureDate)
+          || left.price - right.price
+          || left.id - right.id;
+      }
+      if (query.sort === 'recently_added') {
+        return right.firstSeenAt.getTime() - left.firstSeenAt.getTime()
+          || left.id - right.id;
+      }
+      return left.price - right.price
+        || left.departureDate.localeCompare(right.departureDate)
+        || left.id - right.id;
     });
     return Promise.resolve(items.slice(query.offset, query.offset + query.limit).map((item) => ({ ...item })));
   }

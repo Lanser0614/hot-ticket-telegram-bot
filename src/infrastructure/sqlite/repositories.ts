@@ -344,8 +344,8 @@ export class ApplicationRepositories implements
       'origin_code = :origin',
       'currency_code = :currency',
       'is_active = 1',
-      'departure_date >= :dateFrom'
-      ,'trip_class = :tripClass'
+      'departure_date >= :dateFrom',
+      'trip_class = :tripClass'
     ];
     const parameters: Record<string, unknown> = {
       ':origin': query.originCode,
@@ -370,10 +370,10 @@ export class ApplicationRepositories implements
     if (query.directOnly) conditions.push('is_direct = 1');
     if (query.baggageRequired) conditions.push('has_baggage = 1');
     const order = query.sort === 'departure_date_asc'
-      ? 'departure_date ASC, price ASC'
+      ? 'departure_date ASC, price ASC, id ASC'
       : query.sort === 'recently_added'
-        ? 'first_seen_at DESC'
-        : 'price ASC';
+        ? 'first_seen_at DESC, id ASC'
+        : 'price ASC, departure_date ASC, id ASC';
     const rows = await this.db.all(`
       SELECT * FROM tickets WHERE ${conditions.join(' AND ')}
       ORDER BY ${order} LIMIT :limit OFFSET :offset

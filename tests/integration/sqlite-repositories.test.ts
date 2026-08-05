@@ -30,7 +30,7 @@ function createRepositories() {
   return { database, repositories: new ApplicationRepositories(database, new FixedClock()) };
 }
 
-function ticket(price = 1_850_000): Ticket {
+function ticket(price = 1_850_000, overrides: Partial<Ticket> = {}): Ticket {
   return {
     externalKey: 'external-key',
     originCode: 'TAS',
@@ -46,7 +46,8 @@ function ticket(price = 1_850_000): Ticket {
     hasBaggage: false,
     ticketLink: 'https://www.aviasales.uz/search/TAS1509IST1',
     rawTicketLink: '/TAS1509IST1?token=1',
-    rawPayload: { source: 'fixture' }
+    rawPayload: { source: 'fixture' },
+    ...overrides
   };
 }
 
@@ -141,6 +142,40 @@ describe('ApplicationRepositories on SQLite', () => {
     expect(await repositories.acquire('sync:hot-tickets:TAS:UZS', 300)).toBe(true);
     expect(await repositories.acquire('sync:hot-tickets:TAS:UZS', 300)).toBe(false);
     await repositories.release('sync:hot-tickets:TAS:UZS');
+    database.close();
+  });
+
+  it('возвращает стабильные страницы без пропусков', async () => {
+    const { database, repositories } = createRepositories();
+    const now = new FixedClock().now();
+    for (let index = 1; index <= 23; index += 1) {
+      await repositories.upsert(ticket(1_000_000, {
+        externalKey: `ticket-${index}`,
+        ticketLink: `https://www.aviasales.uz/search/TAS1509IST${index}`
+      }), now);
+    }
+
+    const baseQuery = {
+      originCode: 'TAS',
+      currencyCode: 'UZS',
+      departureDateFrom: '2026-08-05',
+      departureDateTo: null,
+      destinationCode: null,
+      maxPrice: null,
+      directOnly: false,
+      tripClass: 'economy' as const,
+      baggageRequired: false,
+      sort: 'price_asc' as const,
+      limit: 10
+    };
+    const pages = await Promise.all([0, 10, 20].map(async (offset) => (
+      repositories.listActive({ ...baseQuery, offset })
+    )));
+    const ids = pages.flatMap((page) => page.map((item) => item.id));
+
+    expect(ids).toHaveLength(23);
+    expect(new Set(ids).size).toBe(23);
+    expect(ids).toEqual(Array.from({ length: 23 }, (_, index) => index + 1));
     database.close();
   });
 });
