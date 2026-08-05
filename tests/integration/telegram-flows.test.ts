@@ -129,6 +129,16 @@ describe('регистрация и профиль', () => {
 });
 
 describe('билеты и настройки', () => {
+  it('показывает билеты по кнопке меню без разбора текста кнопки как IATA', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    await fixture.store.upsert(createTicket({}), fixture.clock.now());
+
+    await fixture.router.handleMessage({ ...startMessage, text: '🔥 Горящие билеты' });
+
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('<b>TAS → IST</b>');
+  });
+
   it('сортирует и фильтрует активные билеты', async () => {
     const fixture = createFixture();
     await fixture.router.handleMessage(startMessage);

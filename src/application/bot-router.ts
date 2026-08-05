@@ -155,7 +155,9 @@ export class TelegramBotRouter {
     }
 
     const user = await this.dependencies.users.requireByTelegramUserId(from.id);
-    if (command === '/tickets' || text === '🔥 Горящие билеты') {
+    if (text === '🔥 Горящие билеты') {
+      await this.sendTickets(from.id, message.chat.id, {});
+    } else if (command === '/tickets') {
       const destination = text.split(/\s+/u)[1];
       await this.sendTickets(from.id, message.chat.id, destination === undefined ? {} : { destinationCode: destination });
     } else if (command === '/subscriptions' || text === '🔔 Мои уведомления') {
