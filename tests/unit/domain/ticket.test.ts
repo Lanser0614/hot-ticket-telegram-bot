@@ -80,4 +80,18 @@ describe('SHA-256 и внешний ключ', () => {
     expect(createExternalKey(input))
       .not.toBe(createExternalKey({ ...input, tripClass: 'business' }));
   });
+
+  it('сохраняет legacy key для economy после миграции', () => {
+    const input: ExternalKeyInput = {
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      departureDate: '2026-08-15',
+      ticketSearchCode: 'TAS1508IST1',
+      currencyCode: 'UZS',
+      tripClass: 'economy'
+    };
+    const legacyKey = sha256('TAS|IST|2026-08-15|TAS1508IST1|UZS');
+
+    expect(createExternalKey(input)).toBe(legacyKey);
+  });
 });

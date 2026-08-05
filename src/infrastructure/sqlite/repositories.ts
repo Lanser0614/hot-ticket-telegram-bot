@@ -528,6 +528,10 @@ export class ApplicationRepositories implements
 
   public async ensureInitialSource(now: Date): Promise<void> {
     await this.db.run(`
+      UPDATE sync_sources SET is_enabled = 0, updated_at = :now
+      WHERE origin_code <> 'TAS' OR currency_code <> 'UZS'
+    `, { ':now': seconds(now) });
+    await this.db.run(`
       INSERT INTO sync_sources (origin_code, currency_code, is_enabled, created_at, updated_at)
       VALUES ('TAS', 'UZS', 1, :now, :now)
       ON CONFLICT(origin_code, currency_code) DO UPDATE SET

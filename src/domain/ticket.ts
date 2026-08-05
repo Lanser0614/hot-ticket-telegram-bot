@@ -91,9 +91,9 @@ export function createExternalKey(input: ExternalKeyInput): string {
     normalizeIataCode(input.destinationCode),
     assertIsoDate(input.departureDate),
     assertSearchCode(input.ticketSearchCode),
-    normalizeCurrencyCode(input.currencyCode),
-    input.tripClass
+    normalizeCurrencyCode(input.currencyCode)
   ];
+  if (input.tripClass === 'business') parts.push(input.tripClass);
   return sha256(parts.join('|'));
 }
 

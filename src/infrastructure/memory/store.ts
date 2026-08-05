@@ -345,6 +345,11 @@ export class MemoryStore implements
   }
 
   public ensureInitialSource(now: Date): Promise<void> {
+    for (const source of this.syncSources) {
+      if (source.originCode !== 'TAS' || source.currencyCode !== 'UZS') {
+        source.isEnabled = false;
+      }
+    }
     const existing = this.syncSources.find((item) => (
       item.originCode === 'TAS' && item.currencyCode === 'UZS'
     ));

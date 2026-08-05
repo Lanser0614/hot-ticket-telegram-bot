@@ -41,4 +41,8 @@ describe('русский справочник локаций', () => {
     expect(resolveLocation('Стамблл')).toEqual({ kind: 'not_found' });
     expect(resolveLocation('')).toEqual({ kind: 'not_found' });
   });
+
+  it('не выдаёт внутренние кириллические транспортные коды как IATA', () => {
+    expect(resolveLocation('ТАШ')).toEqual({ kind: 'not_found' });
+  });
 });
