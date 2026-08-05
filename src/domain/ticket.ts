@@ -32,6 +32,7 @@ export interface ExternalKeyInput {
   departureDate: string;
   ticketSearchCode: string;
   currencyCode: string;
+  tripClass: TripClass;
 }
 
 function assertSearchCode(value: string): string {
@@ -90,7 +91,8 @@ export function createExternalKey(input: ExternalKeyInput): string {
     normalizeIataCode(input.destinationCode),
     assertIsoDate(input.departureDate),
     assertSearchCode(input.ticketSearchCode),
-    normalizeCurrencyCode(input.currencyCode)
+    normalizeCurrencyCode(input.currencyCode),
+    input.tripClass
   ];
   return sha256(parts.join('|'));
 }

@@ -42,6 +42,7 @@ describe('SHA-256 и внешний ключ', () => {
       departureDate: '2026-08-15',
       ticketSearchCode: 'TAS1508IST1',
       currencyCode: 'UZS',
+      tripClass: 'economy',
       price: 2_395_739
     };
 
@@ -59,9 +60,24 @@ describe('SHA-256 и внешний ключ', () => {
       destinationCode: 'IST',
       departureDate: '2026-08-15',
       ticketSearchCode: 'TAS1508IST1',
-      currencyCode: 'UZS'
+      currencyCode: 'UZS',
+      tripClass: 'economy'
     };
 
     expect(createExternalKey(input)).not.toBe(createExternalKey({ ...input, destinationCode: 'DXB' }));
+  });
+
+  it('различает одинаковые предложения разных классов', () => {
+    const input: ExternalKeyInput = {
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      departureDate: '2026-08-15',
+      ticketSearchCode: 'TAS1508IST1',
+      currencyCode: 'UZS',
+      tripClass: 'economy'
+    };
+
+    expect(createExternalKey(input))
+      .not.toBe(createExternalKey({ ...input, tripClass: 'business' }));
   });
 });

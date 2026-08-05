@@ -65,6 +65,7 @@ function mapDirection(direction: unknown): Ticket {
   const rawTicketLink = requireString(price.ticket_link, 'ticket_link');
   const ticketLink = normalizeTicketLink(rawTicketLink);
   const ticketSearchCode = extractTicketSearchCode(ticketLink);
+  const tripClass = mapTripClass(price.trip_class);
 
   return {
     externalKey: createExternalKey({
@@ -72,7 +73,8 @@ function mapDirection(direction: unknown): Ticket {
       destinationCode,
       departureDate,
       ticketSearchCode,
-      currencyCode
+      currencyCode,
+      tripClass
     }),
     originCode,
     destinationCode,
@@ -83,7 +85,7 @@ function mapDirection(direction: unknown): Ticket {
     airlineCode: parseOptionalAirline(price.airline),
     airlineName: null,
     isDirect: numberOfChanges === 0,
-    tripClass: mapTripClass(price.trip_class),
+    tripClass,
     hasBaggage: requireBoolean(price.with_baggage, 'with_baggage'),
     ticketLink,
     rawTicketLink,

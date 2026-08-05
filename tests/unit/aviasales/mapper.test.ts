@@ -75,6 +75,57 @@ describe('mapHotOffersResponse', () => {
     expect(logger.warnings[0]?.event).toBe('aviasales_offer_mapping_failed');
   });
 
+  it('сохраняет business class и багаж', () => {
+    const logger = new RecordingLogger();
+    const response: unknown = {
+      directions: [{
+        destination_iata: 'DXB',
+        ticket: { price: {
+          value: 4_000_000,
+          origin: 'TAS',
+          currency: 'uzs',
+          depart_date: '2026-09-16',
+          depart_date_time: '2026-09-16 10:20',
+          trip_class: 2,
+          with_baggage: true,
+          number_of_changes: 0,
+          airline: 'HY',
+          ticket_link: '/TAS1609DXB1?t=token'
+        } }
+      }]
+    };
+
+    expect(mapHotOffersResponse(response, logger)[0]).toMatchObject({
+      tripClass: 'business',
+      hasBaggage: true
+    });
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  it('пропускает неизвестный trip_class без raw payload в логе', () => {
+    const logger = new RecordingLogger();
+    const response: unknown = {
+      directions: [{
+        destination_iata: 'DXB',
+        secret: 'raw-payload',
+        ticket: { price: {
+          value: 4_000_000,
+          origin: 'TAS',
+          currency: 'uzs',
+          depart_date: '2026-09-16',
+          trip_class: 3,
+          with_baggage: true,
+          number_of_changes: 0,
+          ticket_link: '/TAS1609DXB1'
+        } }
+      }]
+    };
+
+    expect(mapHotOffersResponse(response, logger)).toEqual([]);
+    expect(JSON.stringify(logger.warnings)).not.toContain('raw-payload');
+    expect(logger.warnings[0]?.event).toBe('aviasales_offer_mapping_failed');
+  });
+
   it.each([null, {}, { directions: null }])('отклоняет неверную структуру %j', (value) => {
     expect(() => mapHotOffersResponse(value, new RecordingLogger())).toThrow(AviasalesResponseError);
   });
