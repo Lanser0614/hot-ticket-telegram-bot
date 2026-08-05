@@ -2,6 +2,7 @@ import type { Clock, UserRepository } from './ports.js';
 import type { TelegramProfileInput, User } from './models.js';
 import { normalizeCurrencyCode, normalizeIataCode } from '../domain/codes.js';
 import { ValidationError } from '../domain/errors.js';
+import type { TripClass } from '../domain/travel-preferences.js';
 
 function assertTelegramId(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -59,5 +60,18 @@ export class UserService {
       this.clock.now()
     );
   }
-}
 
+  public async updateTicketPreferences(
+    telegramUserId: number,
+    tripClass: TripClass,
+    baggageRequired: boolean
+  ): Promise<void> {
+    const user = await this.requireByTelegramUserId(telegramUserId);
+    await this.users.updateTicketPreferences(
+      user.id,
+      tripClass,
+      baggageRequired,
+      this.clock.now()
+    );
+  }
+}

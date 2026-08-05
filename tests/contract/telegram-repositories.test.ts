@@ -52,6 +52,8 @@ function userRow(): Readonly<Record<string, unknown>> {
     language_code: 'ru',
     default_origin_code: 'TAS',
     preferred_currency_code: 'UZS',
+    preferred_trip_class: 'economy',
+    baggage_required: 0,
     is_active: 1,
     created_at: 1_775_300_400,
     updated_at: 1_775_300_400
@@ -88,6 +90,26 @@ describe('ApplicationRepositories', () => {
     expect(db.calls[0]?.query).toContain('ON CONFLICT(key) DO UPDATE');
     expect(db.calls[0]?.query).toContain('WHERE sync_locks.expires_at <= :now');
     expect(db.calls[1]?.query).toContain('AND owner = :owner');
+  });
+
+  it('обновляет только класс и требование багажа', async () => {
+    const db = new FakeDatabase();
+    const repositories = new ApplicationRepositories(db, new FixedClock());
+
+    await repositories.updateTicketPreferences(
+      1,
+      'business',
+      true,
+      new Date('2026-08-04T12:00:00Z')
+    );
+
+    expect(db.calls[0]?.query).toContain('preferred_trip_class = :tripClass');
+    expect(db.calls[0]?.query).not.toContain('default_origin_code');
+    expect(db.calls[0]?.parameters).toMatchObject({
+      ':id': 1,
+      ':tripClass': 'business',
+      ':baggageRequired': 1
+    });
   });
 
   it('вставляет notification history с защитой от конфликта', async () => {
