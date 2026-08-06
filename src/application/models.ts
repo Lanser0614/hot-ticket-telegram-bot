@@ -66,6 +66,14 @@ export interface TicketQuery {
   offset: number;
 }
 
+export interface DestinationQuery {
+  originCode: string;
+  currencyCode: string;
+  departureDateFrom: string;
+  tripClass: TripClass;
+  baggageRequired: boolean;
+}
+
 export interface NotificationInput {
   user: User;
   subscription: Subscription;

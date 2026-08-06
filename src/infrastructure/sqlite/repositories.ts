@@ -11,6 +11,7 @@ import type {
   UserRepository
 } from '../../application/ports.js';
 import type {
+  DestinationQuery,
   StoredTicket,
   SyncResult,
   SyncSource,
@@ -367,6 +368,28 @@ export class ApplicationRepositories implements
       ORDER BY ${order} LIMIT :limit OFFSET :offset
     `, parameters);
     return rows.map(mapTicket);
+  }
+
+  public async listActiveDestinations(query: DestinationQuery): Promise<readonly string[]> {
+    const conditions = [
+      'origin_code = :origin',
+      'currency_code = :currency',
+      'is_active = 1',
+      'departure_date >= :dateFrom',
+      'trip_class = :tripClass'
+    ];
+    const parameters: Record<string, unknown> = {
+      ':origin': query.originCode,
+      ':currency': query.currencyCode,
+      ':dateFrom': query.departureDateFrom,
+      ':tripClass': query.tripClass
+    };
+    if (query.baggageRequired) conditions.push('has_baggage = 1');
+    const rows = await this.db.all(`
+      SELECT DISTINCT destination_code FROM tickets WHERE ${conditions.join(' AND ')}
+      ORDER BY destination_code ASC
+    `, parameters);
+    return rows.map((row) => requiredString(row, 'destination_code'));
   }
 
   public async addPrice(ticketId: number, price: number, observedAt: Date): Promise<void> {

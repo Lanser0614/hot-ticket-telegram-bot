@@ -3,6 +3,7 @@ import type { TicketEventType } from '../domain/ticket-events.js';
 import type { Ticket } from '../domain/ticket.js';
 import type { TripClass } from '../domain/travel-preferences.js';
 import type {
+  DestinationQuery,
   NotificationInput,
   StoredTicket,
   SyncResult,
@@ -34,6 +35,7 @@ export interface TicketRepository {
   upsert(ticket: Ticket, observedAt: Date): Promise<{ stored: StoredTicket; previous: StoredTicket | null }>;
   deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number>;
   listActive(query: TicketQuery): Promise<readonly StoredTicket[]>;
+  listActiveDestinations(query: DestinationQuery): Promise<readonly string[]>;
 }
 
 export interface PriceHistoryRepository {

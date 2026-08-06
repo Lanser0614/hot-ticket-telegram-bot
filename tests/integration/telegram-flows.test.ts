@@ -147,6 +147,70 @@ describe('билеты и настройки', () => {
     expect(fixture.gateway.messages.at(-1)?.text).toBe('Показано 1–1');
   });
 
+  it('делит доступные города на локальные и международные вкладки', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    await fixture.store.upsert(createTicket({ externalKey: 'k-ist', destinationCode: 'IST' }), fixture.clock.now());
+    await fixture.store.upsert(createTicket({ externalKey: 'k-dxb', destinationCode: 'DXB' }), fixture.clock.now());
+    await fixture.store.upsert(createTicket({ externalKey: 'k-skd', destinationCode: 'SKD' }), fixture.clock.now());
+
+    await fixture.router.handleMessage({ ...startMessage, text: '🔥 Горящие билеты' });
+    const tabs = JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup);
+    expect(tabs).toContain('Локальные рейсы');
+    expect(tabs).toContain('catalog:dom:0');
+    expect(tabs).toContain('Международные');
+    expect(tabs).toContain('catalog:intl:0');
+
+    await fixture.router.handleCallbackQuery({
+      id: 'catalog-dom',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'catalog:dom:0'
+    });
+    const domMessage = fixture.gateway.messages.at(-1);
+    expect(domMessage?.text).toContain('Локальные направления');
+    const domMarkup = JSON.stringify(domMessage?.replyMarkup);
+    expect(domMarkup).toContain('Самарканд (SKD)');
+    expect(domMarkup).not.toContain('Стамбул');
+    expect(fixture.gateway.callbackAnswers.at(-1)).toEqual({ callbackQueryId: 'catalog-dom' });
+
+    await fixture.router.handleCallbackQuery({
+      id: 'catalog-intl',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'catalog:intl:0'
+    });
+    const intlMarkup = JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup);
+    expect(intlMarkup).toContain('Стамбул (IST)');
+    expect(intlMarkup).toContain('Дубай (DXB)');
+    expect(intlMarkup).not.toContain('Самарканд');
+
+    await fixture.router.handleCallbackQuery({
+      id: 'catalog-city',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'tickets:SKD:0:E0'
+    });
+    expect(fixture.gateway.messages.some((message) => message.text.includes('Самарканд (SKD)'))).toBe(true);
+  });
+
+  it('сообщает о пустой вкладке, если рейсов нет', async () => {
+    const fixture = createFixture();
+    await fixture.router.handleMessage(startMessage);
+    await fixture.store.upsert(createTicket({ externalKey: 'k-ist', destinationCode: 'IST' }), fixture.clock.now());
+
+    await fixture.router.handleCallbackQuery({
+      id: 'catalog-empty',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'catalog:dom:0'
+    });
+    expect(fixture.gateway.callbackAnswers.at(-1)).toEqual({
+      callbackQueryId: 'catalog-empty',
+      text: 'Локальных рейсов пока нет'
+    });
+  });
+
   it('открывает /tickets IST без вопроса и безопасно обрабатывает неизвестный город', async () => {
     const fixture = createFixture();
     await fixture.router.handleMessage(startMessage);

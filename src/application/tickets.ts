@@ -3,6 +3,10 @@ import type { Clock, TicketRepository, UserRepository } from './ports.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { assertIsoDate, dateInTimeZone } from '../domain/dates.js';
 import { ValidationError } from '../domain/errors.js';
+import {
+  getLocationCountryCode,
+  getLocationName
+} from '../domain/locations.js';
 import { assertMoney } from '../domain/money.js';
 import {
   DEFAULT_CURRENCY_CODE,
@@ -29,6 +33,15 @@ export interface TicketPage {
   readonly hasNext: boolean;
 }
 
+export type DestinationScope = 'domestic' | 'international';
+
+export interface AvailableDestination {
+  readonly code: string;
+  readonly name: string;
+}
+
+const DOMESTIC_COUNTRY_CODE = 'UZ';
+
 export class TicketService {
   public constructor(
     private readonly users: UserRepository,
@@ -41,6 +54,30 @@ export class TicketService {
     options: TicketListingOptions
   ): Promise<readonly StoredTicket[]> {
     return (await this.listPageForTelegramUser(telegramUserId, options)).tickets;
+  }
+
+  public async listAvailableDestinations(
+    telegramUserId: number,
+    scope: DestinationScope
+  ): Promise<readonly AvailableDestination[]> {
+    const user = await this.users.findByTelegramUserId(telegramUserId);
+    if (user === null) throw new ValidationError('Сначала выполните /start');
+    const departureDateFrom = dateInTimeZone(this.clock.now(), 'Asia/Tashkent');
+    const codes = await this.tickets.listActiveDestinations({
+      originCode: DEFAULT_ORIGIN_CODE,
+      currencyCode: DEFAULT_CURRENCY_CODE,
+      departureDateFrom,
+      tripClass: user.preferredTripClass,
+      baggageRequired: user.baggageRequired
+    });
+    const destinations: AvailableDestination[] = [];
+    for (const code of codes) {
+      const isDomestic = getLocationCountryCode(code) === DOMESTIC_COUNTRY_CODE;
+      if (scope === 'domestic' ? !isDomestic : isDomestic) continue;
+      destinations.push({ code, name: getLocationName(code) ?? code });
+    }
+    destinations.sort((left, right) => left.name.localeCompare(right.name, 'ru'));
+    return destinations;
   }
 
   public async listPageForTelegramUser(

@@ -17,14 +17,16 @@ import {
   type TripClass
 } from '../domain/travel-preferences.js';
 import {
-  allDestinationsKeyboard,
+  catalogCitiesKeyboard,
+  catalogTabsKeyboard,
   mainKeyboard,
   subscriptionKeyboard,
   ticketKeyboard,
   ticketNavigationKeyboard
 } from '../presentation/keyboards.js';
 import { presentSubscription } from '../presentation/subscription-presenter.js';
-import { parseTicketCursor } from '../presentation/ticket-pagination.js';
+import type { CatalogCommand } from '../presentation/ticket-pagination.js';
+import { parseCatalogCommand, parseTicketCursor } from '../presentation/ticket-pagination.js';
 import { presentTicket } from '../presentation/ticket-presenter.js';
 
 export interface TelegramMessage {
@@ -124,6 +126,11 @@ export class TelegramBotRouter {
 
   public async handleCallbackQuery(query: TelegramCallbackQuery): Promise<void> {
     const data = query.data ?? '';
+    const catalogCommand = parseCatalogCommand(data);
+    if (catalogCommand !== null) {
+      await this.handleCatalogCommand(query, catalogCommand);
+      return;
+    }
     if (data.startsWith('tickets:')) {
       const cursor = parseTicketCursor(data);
       if (cursor === null) {
@@ -171,6 +178,58 @@ export class TelegramBotRouter {
     });
   }
 
+  private async handleCatalogCommand(
+    query: TelegramCallbackQuery,
+    command: CatalogCommand
+  ): Promise<void> {
+    if (query.chatId === null) {
+      await this.answerCallback(query.id, 'Не удалось открыть каталог');
+      return;
+    }
+    try {
+      const user = await this.dependencies.users.requireByTelegramUserId(query.from.id);
+      const filter = {
+        tripClass: user.preferredTripClass,
+        baggageRequired: user.baggageRequired
+      };
+      if (command.kind === 'home') {
+        await this.dependencies.gateway.sendMessage({
+          chatId: query.chatId,
+          text: 'Вылет из Ташкента (TAS). Куда летим?',
+          replyMarkup: catalogTabsKeyboard(filter)
+        });
+        await this.dependencies.gateway.answerCallbackQuery({ callbackQueryId: query.id });
+        return;
+      }
+      const cities = await this.dependencies.tickets.listAvailableDestinations(
+        query.from.id,
+        command.scope
+      );
+      if (cities.length === 0) {
+        await this.dependencies.gateway.answerCallbackQuery({
+          callbackQueryId: query.id,
+          text: command.scope === 'domestic'
+            ? 'Локальных рейсов пока нет'
+            : 'Международных рейсов пока нет'
+        });
+        return;
+      }
+      await this.dependencies.gateway.sendMessage({
+        chatId: query.chatId,
+        text: command.scope === 'domestic'
+          ? '🇺🇿 Локальные направления из Ташкента:'
+          : '🌍 Международные направления из Ташкента:',
+        replyMarkup: catalogCitiesKeyboard(command.scope, cities, command.offset, filter)
+      });
+      await this.dependencies.gateway.answerCallbackQuery({ callbackQueryId: query.id });
+    } catch (error: unknown) {
+      await this.answerCallback(
+        query.id,
+        error instanceof ValidationError ? error.message : 'Не удалось открыть каталог'
+      );
+    }
+  }
+
   private async answerCallback(callbackQueryId: string, text: string): Promise<void> {
     await this.dependencies.gateway.answerCallbackQuery({ callbackQueryId, text });
   }
@@ -209,7 +268,7 @@ export class TelegramBotRouter {
         await this.dependencies.gateway.sendMessage({
           chatId: message.chat.id,
           text: 'Вылет из Ташкента (TAS). Куда летим?',
-          replyMarkup: allDestinationsKeyboard({
+          replyMarkup: catalogTabsKeyboard({
             tripClass: user.preferredTripClass,
             baggageRequired: user.baggageRequired
           })

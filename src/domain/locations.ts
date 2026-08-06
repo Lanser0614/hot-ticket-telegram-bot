@@ -5,6 +5,7 @@ interface LocationRecord {
   readonly name: string;
   readonly cityCode: string;
   readonly cityName: string;
+  readonly countryCode: string;
 }
 
 export interface LocationMatch {
@@ -44,6 +45,10 @@ for (const location of Object.values(LOCATIONS)) {
 
 export function getLocationName(code: string): string | null {
   return LOCATIONS[code.trim().toUpperCase()]?.name ?? null;
+}
+
+export function getLocationCountryCode(code: string): string | null {
+  return LOCATIONS[code.trim().toUpperCase()]?.countryCode ?? null;
 }
 
 export function formatLocationLabel(code: string): string {

@@ -24,5 +24,7 @@ export function subscriptionKeyboard(subscriptionId: number): unknown {
 
 export {
   allDestinationsKeyboard,
+  catalogCitiesKeyboard,
+  catalogTabsKeyboard,
   ticketNavigationKeyboard
 } from './ticket-pagination.js';

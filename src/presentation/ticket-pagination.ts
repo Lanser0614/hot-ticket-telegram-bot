@@ -1,10 +1,16 @@
-import type { TicketPage } from '../application/tickets.js';
+import type {
+  AvailableDestination,
+  DestinationScope,
+  TicketPage
+} from '../application/tickets.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { ValidationError } from '../domain/errors.js';
 import type { TripClass } from '../domain/travel-preferences.js';
 import { TICKET_PAGE_SIZE } from '../domain/travel-preferences.js';
 
 const MAX_TICKET_OFFSET = 10_000;
+export const CITY_PAGE_SIZE = 12;
+const CATALOG_PATTERN = /^catalog:(home|dom|intl)(?::(0|[1-9]\d*))?$/u;
 const CALLBACK_PATTERN = /^tickets:(ALL|[A-Z0-9]{3}):(0|[1-9]\d*):([EB])([01])$/u;
 
 export interface TicketCursor {
@@ -78,6 +84,66 @@ export function allDestinationsKeyboard(filter: TicketFilter): unknown {
       })
     }]]
   };
+}
+
+export type CatalogCommand =
+  | { readonly kind: 'home' }
+  | { readonly kind: 'scope'; readonly scope: DestinationScope; readonly offset: number };
+
+function scopeKey(scope: DestinationScope): string {
+  return scope === 'domestic' ? 'dom' : 'intl';
+}
+
+export function parseCatalogCommand(data: string): CatalogCommand | null {
+  const match = CATALOG_PATTERN.exec(data);
+  if (match === null) return null;
+  const key = match[1];
+  if (key === 'home') return { kind: 'home' };
+  const offset = match[2] === undefined ? 0 : Number(match[2]);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset % CITY_PAGE_SIZE !== 0) return null;
+  return { kind: 'scope', scope: key === 'dom' ? 'domestic' : 'international', offset };
+}
+
+export function catalogTabsKeyboard(filter: TicketFilter): unknown {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🇺🇿 Локальные рейсы', callback_data: 'catalog:dom:0' },
+        { text: '🌍 Международные', callback_data: 'catalog:intl:0' }
+      ],
+      [{
+        text: '🌍 Все направления из Ташкента',
+        callback_data: encodeTicketCursor({ destinationCode: null, offset: 0, ...filter })
+      }]
+    ]
+  };
+}
+
+export function catalogCitiesKeyboard(
+  scope: DestinationScope,
+  cities: readonly AvailableDestination[],
+  offset: number,
+  filter: TicketFilter
+): unknown {
+  const pageCities = cities.slice(offset, offset + CITY_PAGE_SIZE);
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (let index = 0; index < pageCities.length; index += 2) {
+    rows.push(pageCities.slice(index, index + 2).map((city) => ({
+      text: `${city.name} (${city.code})`,
+      callback_data: encodeTicketCursor({ destinationCode: city.code, offset: 0, ...filter })
+    })));
+  }
+  const key = scopeKey(scope);
+  const nav: Array<{ text: string; callback_data: string }> = [];
+  if (offset > 0) {
+    nav.push({ text: '⬅️ Назад', callback_data: `catalog:${key}:${offset - CITY_PAGE_SIZE}` });
+  }
+  if (offset + CITY_PAGE_SIZE < cities.length) {
+    nav.push({ text: '➡️ Ещё города', callback_data: `catalog:${key}:${offset + CITY_PAGE_SIZE}` });
+  }
+  if (nav.length > 0) rows.push(nav);
+  rows.push([{ text: '🔙 К категориям', callback_data: 'catalog:home' }]);
+  return { inline_keyboard: rows };
 }
 
 export function ticketNavigationKeyboard(

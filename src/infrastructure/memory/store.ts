@@ -11,6 +11,7 @@ import type {
   UserRepository
 } from '../../application/ports.js';
 import type {
+  DestinationQuery,
   StoredTicket,
   SyncResult,
   SyncRunStatus,
@@ -263,6 +264,21 @@ export class MemoryStore implements
         || left.id - right.id;
     });
     return Promise.resolve(items.slice(query.offset, query.offset + query.limit).map((item) => ({ ...item })));
+  }
+
+  public listActiveDestinations(query: DestinationQuery): Promise<readonly string[]> {
+    const codes = new Set<string>();
+    for (const ticket of this.tickets) {
+      if (
+        ticket.isActive
+        && ticket.originCode === query.originCode
+        && ticket.currencyCode === query.currencyCode
+        && ticket.departureDate >= query.departureDateFrom
+        && ticket.tripClass === query.tripClass
+        && (!query.baggageRequired || ticket.hasBaggage)
+      ) codes.add(ticket.destinationCode);
+    }
+    return Promise.resolve([...codes].sort());
   }
 
   public addPrice(ticketId: number, price: number, observedAt: Date): Promise<void> {
