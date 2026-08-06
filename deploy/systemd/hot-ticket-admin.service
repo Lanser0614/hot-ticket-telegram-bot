@@ -1,0 +1,27 @@
+[Unit]
+Description=Hot Ticket Admin Panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hotticket
+Group=hotticket
+WorkingDirectory=/opt/hot-ticket-bot
+EnvironmentFile=/etc/hot-ticket-bot.env
+ExecStart=/usr/bin/node dist/entries/admin.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+ReadWritePaths=/opt/hot-ticket-bot/data /opt/hot-ticket-bot/backups
+
+[Install]
+WantedBy=multi-user.target

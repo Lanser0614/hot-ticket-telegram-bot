@@ -19,6 +19,13 @@ export interface VdsConfig {
   readonly aviasales: AppConfig;
 }
 
+export interface AdminConfig {
+  readonly host: string;
+  readonly port: number;
+  readonly username: string;
+  readonly password: string;
+}
+
 function requiredSecret(value: string | undefined, name: string): string {
   const normalized = value?.trim();
   if (normalized === undefined || normalized.length === 0) {
@@ -64,6 +71,15 @@ export function loadConfig(input: ConfigInput): AppConfig {
     aviasalesMarket: 'uz',
     aviasalesLanguage: 'ru',
     aviasalesPassportCountry: 'UZ'
+  };
+}
+
+export function loadAdminConfig(input: NodeJS.ProcessEnv): AdminConfig {
+  return {
+    host: input.ADMIN_HOST?.trim() || '127.0.0.1',
+    port: boundedInteger(input.ADMIN_PORT, 8080, 1, 65_535, 'ADMIN_PORT'),
+    username: requiredSecret(input.ADMIN_USERNAME, 'ADMIN_USERNAME'),
+    password: requiredSecret(input.ADMIN_PASSWORD, 'ADMIN_PASSWORD')
   };
 }
 

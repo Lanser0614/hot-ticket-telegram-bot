@@ -266,3 +266,32 @@ sudo -u hotticket test -w /opt/hot-ticket-bot/data
 ```
 
 Если sync не создаёт билеты, запустите ручную команду из раздела «Первый ручной sync» и проверьте `sync_runs` в SQLite. Миграции автоматически применяются как при старте бота, так и при ручном sync.
+
+## Админ-панель (опционально)
+
+Отдельный веб-сервис `dist/entries/admin.js` показывает каталог билетов с сортировкой по городу, цене и дате вылета, фильтром локальные/международные рейсы, поиском по городу или IATA-коду, сводной статистикой и кнопкой ручного запуска синхронизации. Это независимый процесс: основной бот по-прежнему работает без входящего HTTP.
+
+Панель слушает только `127.0.0.1` по умолчанию и защищена HTTP Basic Auth. Задайте переменные в `/etc/hot-ticket-bot.env`:
+
+```dotenv
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=8080
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=длинный-случайный-пароль
+```
+
+Установите systemd unit и запустите сервис:
+
+```bash
+sudo install -m 644 deploy/systemd/hot-ticket-admin.service /etc/systemd/system/hot-ticket-admin.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now hot-ticket-admin
+```
+
+Так как панель слушает `127.0.0.1`, открывайте её через SSH-туннель, не публикуя порт наружу:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 user@vds
+```
+
+Затем откройте `http://localhost:8080` в браузере. Liveness-проверка доступна без авторизации на `/healthz`.
