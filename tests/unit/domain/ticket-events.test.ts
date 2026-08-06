@@ -9,6 +9,7 @@ const ticket: Ticket = {
   destinationCode: 'IST',
   departureDate: '2026-09-15',
   departureAt: null,
+  returnDate: null,
   price: 1_850_000,
   currencyCode: 'UZS',
   airlineCode: null,

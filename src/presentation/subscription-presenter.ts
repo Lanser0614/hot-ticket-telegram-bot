@@ -13,6 +13,7 @@ export function presentSubscription(subscription: Subscription): string {
     `Период: ${subscription.departureDateFrom}–${subscription.departureDateTo}`,
     `Максимальная цена: ${price}`,
     `Рейс: ${subscription.directOnly ? 'только прямой' : 'любой'}`,
+    `Билет: ${subscription.roundTripOnly ? 'только туда-обратно' : 'любой'}`,
     `Статус: ${subscription.isActive ? 'активна' : 'отключена'}`
   ].join('\n');
 }

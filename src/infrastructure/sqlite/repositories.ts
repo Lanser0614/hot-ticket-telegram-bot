@@ -111,6 +111,7 @@ function mapTicket(row: Row): StoredTicket {
     destinationCode: requiredString(row, 'destination_code'),
     departureDate: requiredString(row, 'departure_date'),
     departureAt: nullableString(row, 'departure_at'),
+    returnDate: nullableString(row, 'return_date'),
     price: requiredNumber(row, 'price'),
     currencyCode: requiredString(row, 'currency_code'),
     airlineCode: nullableString(row, 'airline_code'),
@@ -141,6 +142,7 @@ function mapSubscription(row: Row): Subscription {
     departureDateTo: requiredString(row, 'departure_date_to'),
     maxPrice: maxPrice === null || maxPrice === undefined ? null : requiredNumber(row, 'max_price'),
     directOnly: bool(row, 'direct_only'),
+    roundTripOnly: bool(row, 'round_trip_only'),
     baggageRequired: bool(row, 'baggage_required'),
     isActive: bool(row, 'is_active')
   };
@@ -276,6 +278,7 @@ export class ApplicationRepositories implements
       ':destination': ticket.destinationCode,
       ':departureDate': ticket.departureDate,
       ':departureAt': ticket.departureAt,
+      ':returnDate': ticket.returnDate,
       ':price': ticket.price,
       ':currency': ticket.currencyCode,
       ':airlineCode': ticket.airlineCode,
@@ -290,17 +293,17 @@ export class ApplicationRepositories implements
     };
     await this.db.run(`
       INSERT INTO tickets (
-        external_key, origin_code, destination_code, departure_date, departure_at,
+        external_key, origin_code, destination_code, departure_date, departure_at, return_date,
         price, currency_code, airline_code, airline_name, is_direct, trip_class, has_baggage,
         ticket_link, raw_ticket_link, raw_payload, first_seen_at, last_seen_at,
         is_active, created_at, updated_at
       ) VALUES (
-        :externalKey, :origin, :destination, :departureDate, :departureAt,
+        :externalKey, :origin, :destination, :departureDate, :departureAt, :returnDate,
         :price, :currency, :airlineCode, :airlineName, :isDirect, :tripClass, :hasBaggage,
         :ticketLink, :rawTicketLink, :rawPayload, :now, :now, 1, :now, :now
       )
       ON CONFLICT(external_key) DO UPDATE SET
-        departure_at = excluded.departure_at, price = excluded.price,
+        departure_at = excluded.departure_at, return_date = excluded.return_date, price = excluded.price,
         airline_code = excluded.airline_code, airline_name = excluded.airline_name,
         is_direct = excluded.is_direct, trip_class = excluded.trip_class,
         has_baggage = excluded.has_baggage,
@@ -407,13 +410,15 @@ export class ApplicationRepositories implements
         AND departure_date_from <= :departureDate AND departure_date_to >= :departureDate
         AND (max_price IS NULL OR max_price >= :price)
         AND (direct_only = 0 OR :isDirect = 1)
+        AND (round_trip_only = 0 OR :hasReturn = 1)
     `, {
       ':origin': ticket.originCode,
       ':currency': ticket.currencyCode,
       ':destination': ticket.destinationCode,
       ':departureDate': ticket.departureDate,
       ':price': ticket.price,
-      ':isDirect': ticket.isDirect ? 1 : 0
+      ':isDirect': ticket.isDirect ? 1 : 0,
+      ':hasReturn': ticket.returnDate !== null ? 1 : 0
     });
     return rows.map(mapSubscription);
   }
@@ -440,11 +445,11 @@ export class ApplicationRepositories implements
     const row = await this.db.get(`
       INSERT INTO subscriptions (
         user_id, origin_code, destination_code, currency_code, departure_date_from,
-        departure_date_to, max_price, direct_only, baggage_required, is_active,
+        departure_date_to, max_price, direct_only, round_trip_only, baggage_required, is_active,
         created_at, updated_at
       ) VALUES (
         :userId, :origin, :destination, :currency, :dateFrom,
-        :dateTo, :maxPrice, :directOnly, :baggageRequired, 1, :now, :now
+        :dateTo, :maxPrice, :directOnly, :roundTripOnly, :baggageRequired, 1, :now, :now
       ) RETURNING *
     `, {
       ':userId': input.userId,
@@ -455,6 +460,7 @@ export class ApplicationRepositories implements
       ':dateTo': input.departureDateTo,
       ':maxPrice': input.maxPrice,
       ':directOnly': input.directOnly ? 1 : 0,
+      ':roundTripOnly': input.roundTripOnly ? 1 : 0,
       ':baggageRequired': input.baggageRequired ? 1 : 0,
       ':now': seconds(now)
     });

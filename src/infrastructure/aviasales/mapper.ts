@@ -35,6 +35,13 @@ function parseDepartureAt(value: unknown): string | null {
   return `${match[1]}T${match[2]}:${match[3]}:00`;
 }
 
+function parseOptionalDate(value: unknown, field: string): string | null {
+  if (value === null || value === undefined) return null;
+  const raw = requireString(value, field).trim();
+  if (raw.length === 0) return null;
+  return assertIsoDate(raw);
+}
+
 function parseOptionalAirline(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   return requireString(value, 'airline').trim().toUpperCase();
@@ -80,6 +87,7 @@ function mapDirection(direction: unknown): Ticket {
     destinationCode,
     departureDate,
     departureAt: parseDepartureAt(price.depart_date_time),
+    returnDate: parseOptionalDate(price.return_date, 'return_date'),
     price: ticketPrice,
     currencyCode,
     airlineCode: parseOptionalAirline(price.airline),

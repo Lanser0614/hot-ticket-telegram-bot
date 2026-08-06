@@ -97,7 +97,37 @@ describe('mapHotOffersResponse', () => {
 
     expect(mapHotOffersResponse(response, logger)[0]).toMatchObject({
       tripClass: 'business',
-      hasBaggage: true
+      hasBaggage: true,
+      returnDate: null
+    });
+    expect(logger.warnings).toHaveLength(0);
+  });
+
+  it('парсит дату возврата для round-trip offer', () => {
+    const logger = new RecordingLogger();
+    const response: unknown = {
+      directions: [{
+        destination_iata: 'DXB',
+        ticket: { price: {
+          value: 3_300_103,
+          origin: 'TAS',
+          currency: 'uzs',
+          depart_date: '2026-08-09',
+          return_date: '2026-08-13',
+          depart_date_time: '2026-08-09 07:50',
+          trip_class: 1,
+          with_baggage: false,
+          number_of_changes: 0,
+          airline: 'C6',
+          ticket_link: '/TAS0908DXB13081?t=token'
+        } }
+      }]
+    };
+
+    expect(mapHotOffersResponse(response, logger)[0]).toMatchObject({
+      destinationCode: 'DXB',
+      departureDate: '2026-08-09',
+      returnDate: '2026-08-13'
     });
     expect(logger.warnings).toHaveLength(0);
   });

@@ -18,6 +18,7 @@ function ticket(index: number, overrides: Partial<Ticket> = {}): Ticket {
     destinationCode: index % 2 === 0 ? 'IST' : 'DXB',
     departureDate: '2026-09-15',
     departureAt: null,
+    returnDate: null,
     price: 1_000_000,
     currencyCode: 'UZS',
     airlineCode: null,

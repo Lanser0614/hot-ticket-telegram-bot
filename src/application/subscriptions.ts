@@ -18,6 +18,7 @@ export type CreateSubscriptionInput = Pick<
   | 'departureDateTo'
   | 'maxPrice'
   | 'directOnly'
+  | 'roundTripOnly'
 >;
 
 export class SubscriptionService {

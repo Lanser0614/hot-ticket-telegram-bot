@@ -13,6 +13,7 @@ const ticket: Ticket = {
   destinationCode: 'IST',
   departureDate: '2026-09-15',
   departureAt: '2026-09-15T16:50:00',
+  returnDate: null,
   price: 1_850_000,
   currencyCode: 'UZS',
   airlineCode: 'HY',
@@ -35,6 +36,7 @@ const subscription: Subscription = {
   departureDateTo: '2026-09-20',
   maxPrice: 2_000_000,
   directOnly: false,
+  roundTripOnly: false,
   baggageRequired: false,
   isActive: true
 };
@@ -60,9 +62,17 @@ describe('matchesSubscription', () => {
     { departureDateTo: '2026-09-14' },
     { maxPrice: 1_849_999 },
     { directOnly: true },
+    { roundTripOnly: true },
     { isActive: false }
   ])('отклоняет несовпадение %j', (override) => {
     expect(matchesSubscription(ticket, { ...subscription, ...override })).toBe(false);
+  });
+
+  it('принимает round-trip билет для подписки только туда-обратно', () => {
+    expect(matchesSubscription(
+      { ...ticket, returnDate: '2026-09-20' },
+      { ...subscription, roundTripOnly: true }
+    )).toBe(true);
   });
 
   it('игнорирует legacy baggage_required подписки', () => {

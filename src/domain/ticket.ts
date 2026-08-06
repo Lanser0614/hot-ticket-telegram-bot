@@ -14,6 +14,7 @@ export interface Ticket {
   destinationCode: string;
   departureDate: string;
   departureAt: string | null;
+  returnDate: string | null;
   price: number;
   currencyCode: string;
   airlineCode: string | null;
@@ -101,6 +102,7 @@ export function validateTicket(ticket: Ticket): Ticket {
   normalizeIataCode(ticket.originCode);
   normalizeIataCode(ticket.destinationCode);
   assertIsoDate(ticket.departureDate);
+  if (ticket.returnDate !== null) assertIsoDate(ticket.returnDate);
   assertMoney(ticket.price);
   normalizeCurrencyCode(ticket.currencyCode);
   normalizeTicketLink(ticket.ticketLink);

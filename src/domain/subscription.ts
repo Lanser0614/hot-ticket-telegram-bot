@@ -14,6 +14,7 @@ export interface Subscription {
   departureDateTo: string;
   maxPrice: number | null;
   directOnly: boolean;
+  roundTripOnly: boolean;
   baggageRequired: boolean;
   isActive: boolean;
 }
@@ -67,5 +68,6 @@ export function matchesSubscription(ticket: Ticket, subscription: Subscription):
       subscription.departureDateTo
     )
     && (subscription.maxPrice === null || ticket.price <= subscription.maxPrice)
-    && (!subscription.directOnly || ticket.isDirect);
+    && (!subscription.directOnly || ticket.isDirect)
+    && (!subscription.roundTripOnly || ticket.returnDate !== null);
 }

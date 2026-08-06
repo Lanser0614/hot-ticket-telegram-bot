@@ -473,6 +473,10 @@ export class TelegramBotRouter {
     } else if (session.step === 'direct') {
       if (!['YES', 'NO'].includes(text.toUpperCase())) throw new ValidationError('Введите YES или NO');
       payload.directOnly = text.toUpperCase() === 'YES';
+      await this.advanceSubscription(session, 'round_trip', payload, chatId, 'Только туда-обратно? YES или NO.');
+    } else if (session.step === 'round_trip') {
+      if (!['YES', 'NO'].includes(text.toUpperCase())) throw new ValidationError('Введите YES или NO');
+      payload.roundTripOnly = text.toUpperCase() === 'YES';
       await this.advanceSubscription(session, 'confirm', payload, chatId, 'Введите SAVE для сохранения.');
     } else if (session.step === 'confirm') {
       if (text.toUpperCase() !== 'SAVE') throw new ValidationError('Введите SAVE или начните заново');
@@ -482,7 +486,8 @@ export class TelegramBotRouter {
         departureDateFrom: requirePayloadString(payload, 'departureDateFrom'),
         departureDateTo: requirePayloadString(payload, 'departureDateTo'),
         maxPrice: nullablePayloadNumber(payload, 'maxPrice'),
-        directOnly: requirePayloadBoolean(payload, 'directOnly')
+        directOnly: requirePayloadBoolean(payload, 'directOnly'),
+        roundTripOnly: requirePayloadBoolean(payload, 'roundTripOnly')
       });
       await this.dependencies.sessions.cancel(session.userId);
       await this.send(chatId, 'Уведомление сохранено.');

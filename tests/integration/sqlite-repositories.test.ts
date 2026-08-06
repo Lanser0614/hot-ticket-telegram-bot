@@ -37,6 +37,7 @@ function ticket(price = 1_850_000, overrides: Partial<Ticket> = {}): Ticket {
     destinationCode: 'IST',
     departureDate: '2026-09-15',
     departureAt: '2026-09-15T16:50:00',
+    returnDate: null,
     price,
     currencyCode: 'UZS',
     airlineCode: 'HY',
@@ -106,6 +107,7 @@ describe('ApplicationRepositories on SQLite', () => {
       departureDateTo: '2026-09-30',
       maxPrice: 2_000_000,
       directOnly: true,
+      roundTripOnly: false,
       baggageRequired: false
     }, now);
     expect(await repositories.findMatching(stored)).toHaveLength(1);

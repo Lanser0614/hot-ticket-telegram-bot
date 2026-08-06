@@ -48,6 +48,7 @@ function createTicket(overrides: Partial<Ticket>): Ticket {
     destinationCode: 'IST',
     departureDate: '2026-09-15',
     departureAt: null,
+    returnDate: null,
     price: 1_850_000,
     currencyCode: 'UZS',
     airlineCode: null,
@@ -311,6 +312,7 @@ describe('подписки и сессии', () => {
       '2026-09-20',
       '2000000',
       'NO',
+      'YES',
       'SAVE'
     ]) {
       await fixture.router.handleMessage({ ...startMessage, text });
@@ -322,6 +324,7 @@ describe('подписки и сессии', () => {
       destinationCode: 'IST',
       maxPrice: 2_000_000,
       directOnly: false,
+      roundTripOnly: true,
       baggageRequired: false,
       isActive: true
     }]);
@@ -351,6 +354,7 @@ describe('подписки и сессии', () => {
         departureDateTo: '2026-09-20',
         maxPrice: null,
         directOnly: false,
+        roundTripOnly: false,
         baggageRequired: false,
         isActive: true
       });
@@ -361,7 +365,8 @@ describe('подписки и сессии', () => {
       departureDateFrom: '2026-09-10',
       departureDateTo: '2026-09-20',
       maxPrice: null,
-      directOnly: false
+      directOnly: false,
+      roundTripOnly: false
     })).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -378,6 +383,7 @@ describe('подписки и сессии', () => {
       departureDateTo: '2026-09-20',
       maxPrice: null,
       directOnly: false,
+      roundTripOnly: false,
       baggageRequired: false,
       isActive: true
     });
