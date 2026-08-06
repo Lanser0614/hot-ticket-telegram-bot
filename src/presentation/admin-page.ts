@@ -2,7 +2,8 @@ import type {
   AdminDashboard,
   AdminScope,
   AdminSort,
-  AdminTicketView
+  AdminTicketView,
+  AdminTripFilter
 } from '../application/admin-service.js';
 
 function escapeHtml(value: string): string {
@@ -35,20 +36,53 @@ function queryString(params: Record<string, string | number>): string {
   return `?${search.toString()}`;
 }
 
+function baseParams(dashboard: AdminDashboard): Record<string, string | number> {
+  const { query } = dashboard;
+  return {
+    scope: query.scope,
+    trip: query.trip,
+    date: query.date,
+    rdate: query.returnDate,
+    sort: query.sort,
+    dir: query.direction,
+    q: query.search,
+    page: 1
+  };
+}
+
 function sortLink(dashboard: AdminDashboard, sort: AdminSort, label: string): string {
   const { query } = dashboard;
   const active = query.sort === sort;
   const direction = active && query.direction === 'asc' ? 'desc' : 'asc';
   const arrow = active ? (query.direction === 'asc' ? ' ▲' : ' ▼') : '';
-  const href = queryString({ scope: query.scope, sort, dir: direction, q: query.search, page: 1 });
+  const href = queryString({ ...baseParams(dashboard), sort, dir: direction });
   return `<a href="${escapeHtml(href)}">${escapeHtml(label)}${arrow}</a>`;
 }
 
 function scopeTab(dashboard: AdminDashboard, scope: AdminScope, label: string, count: number): string {
-  const { query } = dashboard;
-  const href = queryString({ scope, sort: query.sort, dir: query.direction, q: query.search, page: 1 });
-  const cls = query.scope === scope ? 'tab active' : 'tab';
+  const href = queryString({ ...baseParams(dashboard), scope });
+  const cls = dashboard.query.scope === scope ? 'tab active' : 'tab';
   return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
+}
+
+function tripTab(dashboard: AdminDashboard, trip: AdminTripFilter, label: string, count: number): string {
+  const href = queryString({ ...baseParams(dashboard), trip });
+  const cls = dashboard.query.trip === trip ? 'tab active' : 'tab';
+  return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
+}
+
+function dateSelect(
+  name: string,
+  placeholder: string,
+  dates: readonly string[],
+  selected: string
+): string {
+  const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
+  for (const date of dates) {
+    const isSelected = date === selected ? ' selected' : '';
+    options.push(`<option value="${escapeHtml(date)}"${isSelected}>${escapeHtml(date)}</option>`);
+  }
+  return `<select name="${escapeHtml(name)}">${options.join('')}</select>`;
 }
 
 function row(view: AdminTicketView): string {
@@ -68,9 +102,8 @@ function row(view: AdminTicketView): string {
 
 function pagination(dashboard: AdminDashboard): string {
   if (dashboard.pageCount <= 1) return '';
-  const { query } = dashboard;
   const link = (page: number, label: string): string => {
-    const href = queryString({ scope: query.scope, sort: query.sort, dir: query.direction, q: query.search, page });
+    const href = queryString({ ...baseParams(dashboard), page });
     return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
   };
   const parts: string[] = [];
@@ -113,7 +146,7 @@ const STYLES = `
   .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; }
   .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
   form.search { margin-left: auto; display: flex; gap: 6px; }
-  input[type=search] { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+  input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #fff; }
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
   button.secondary { background: #10b981; }
   table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #e3e5e8; }
@@ -162,13 +195,21 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
       ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic)}
       ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international)}
     </div>
+    <div class="tabs">
+      ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active)}
+      ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip)}
+      ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay)}
+    </div>
     <form method="post" action="/sync">
       <button class="secondary" type="submit">↻ Синхронизировать сейчас</button>
     </form>
     <form class="search" method="get" action="/">
       <input type="hidden" name="scope" value="${escapeHtml(query.scope)}">
+      <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
       <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
       <input type="hidden" name="dir" value="${escapeHtml(query.direction)}">
+      ${dateSelect('date', 'Дата вылета: все', dashboard.departureDates, query.date)}
+      ${dateSelect('rdate', 'Дата возврата: все', dashboard.returnDates, query.returnDate)}
       <input type="search" name="q" placeholder="Поиск по городу или IATA" value="${escapeHtml(query.search)}">
       <button type="submit">Найти</button>
     </form>

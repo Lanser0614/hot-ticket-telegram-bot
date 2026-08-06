@@ -5,6 +5,7 @@ import type {
   AdminService,
   AdminSort,
   AdminQuery,
+  AdminTripFilter,
   SortDirection
 } from '../../application/admin-service.js';
 import type { Logger } from '../../application/ports.js';
@@ -26,6 +27,10 @@ function parseScope(value: string): AdminScope {
   return value === 'domestic' || value === 'international' ? value : 'all';
 }
 
+function parseTrip(value: string): AdminTripFilter {
+  return value === 'round' || value === 'oneway' ? value : 'all';
+}
+
 function parseSort(value: string): AdminSort {
   return value === 'price' || value === 'date' ? value : 'city';
 }
@@ -39,9 +44,16 @@ function parsePage(value: string): number {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 }
 
+function parseDate(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/u.test(value) ? value : '';
+}
+
 function parseQuery(request: Request): AdminQuery {
   return {
     scope: parseScope(firstValue(request.query.scope)),
+    trip: parseTrip(firstValue(request.query.trip)),
+    date: parseDate(firstValue(request.query.date)),
+    returnDate: parseDate(firstValue(request.query.rdate)),
     sort: parseSort(firstValue(request.query.sort)),
     direction: parseDirection(firstValue(request.query.dir)),
     search: firstValue(request.query.q).slice(0, 100),

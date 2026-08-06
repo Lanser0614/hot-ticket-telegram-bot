@@ -5,6 +5,7 @@ const DOMESTIC_COUNTRY_CODE = 'UZ';
 const DEFAULT_PAGE_SIZE = 50;
 
 export type AdminScope = 'all' | 'domestic' | 'international';
+export type AdminTripFilter = 'all' | 'round' | 'oneway';
 export type AdminSort = 'city' | 'price' | 'date';
 export type SortDirection = 'asc' | 'desc';
 
@@ -59,6 +60,9 @@ export interface AdminTicketView {
 
 export interface AdminQuery {
   readonly scope: AdminScope;
+  readonly trip: AdminTripFilter;
+  readonly date: string;
+  readonly returnDate: string;
   readonly sort: AdminSort;
   readonly direction: SortDirection;
   readonly search: string;
@@ -76,7 +80,11 @@ export interface AdminDashboard {
     readonly active: number;
     readonly domestic: number;
     readonly international: number;
+    readonly roundTrip: number;
+    readonly oneWay: number;
   };
+  readonly departureDates: readonly string[];
+  readonly returnDates: readonly string[];
   readonly stats: AdminStatsRecord;
 }
 
@@ -124,10 +132,22 @@ export class AdminService {
     ]);
     const views = records.map(toView);
     const domestic = views.filter((view) => view.scope === 'domestic').length;
+    const roundTrip = views.filter((view) => view.roundTrip).length;
+
+    const departureDates = [...new Set(views.map((view) => view.departureDate))].sort();
+    const returnDates = [...new Set(
+      views.map((view) => view.returnDate).filter((value): value is string => value !== null)
+    )].sort();
 
     const search = query.search.trim().toLocaleLowerCase('ru-RU');
+    const date = query.date.trim();
+    const returnDate = query.returnDate.trim();
     const filtered = views.filter((view) => {
       if (query.scope !== 'all' && view.scope !== query.scope) return false;
+      if (query.trip === 'round' && !view.roundTrip) return false;
+      if (query.trip === 'oneway' && view.roundTrip) return false;
+      if (date.length > 0 && view.departureDate !== date) return false;
+      if (returnDate.length > 0 && view.returnDate !== returnDate) return false;
       if (search.length === 0) return true;
       return view.destinationName.toLocaleLowerCase('ru-RU').includes(search)
         || view.destinationCode.toLocaleLowerCase('ru-RU').includes(search);
@@ -154,8 +174,12 @@ export class AdminService {
       counts: {
         active: views.length,
         domestic,
-        international: views.length - domestic
+        international: views.length - domestic,
+        roundTrip,
+        oneWay: views.length - roundTrip
       },
+      departureDates,
+      returnDates,
       stats
     };
   }

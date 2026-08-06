@@ -11,7 +11,7 @@ function normalizeSpaces(value: string): string {
 
 function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
   return {
-    query: { scope: 'all', sort: 'city', direction: 'asc', search: '', page: 1 },
+    query: { scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city', direction: 'asc', search: '', page: 1 },
     rows: [{
       id: 1,
       destinationCode: 'IST',
@@ -31,7 +31,9 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
     page: 1,
     pageCount: 1,
     pageSize: 50,
-    counts: { active: 1, domestic: 0, international: 1 },
+    counts: { active: 1, domestic: 0, international: 1, roundTrip: 1, oneWay: 0 },
+    departureDates: ['2026-09-15'],
+    returnDates: ['2026-09-20'],
     stats: { totalTickets: 10, users: 4, activeSubscriptions: 2, lastSync: null },
     ...overrides
   };
@@ -45,8 +47,35 @@ describe('renderAdminPage', () => {
     expect(normalizeSpaces(html)).toContain('2 000 000 UZS');
     expect(html).toContain('Локальные (0)');
     expect(html).toContain('Международные (1)');
+    expect(html).toContain('🔁 Туда-обратно (1)');
+    expect(html).toContain('➡️ В одну сторону (0)');
+    expect(html).toContain('name="date"');
     expect(html).toContain('Активных билетов');
     expect(html).toContain('action="/sync"');
+  });
+
+  it('переносит фильтры даты и типа в ссылки сортировки и вкладок', () => {
+    const html = renderAdminPage(dashboard({
+      query: {
+        scope: 'all', trip: 'round', date: '2026-09-15', returnDate: '2026-09-20',
+        sort: 'city', direction: 'asc', search: '', page: 1
+      }
+    }));
+
+    expect(html).toContain('date=2026-09-15');
+    expect(html).toContain('rdate=2026-09-20');
+    expect(html).toContain('trip=round');
+    expect(html).toContain('<option value="2026-09-15" selected>');
+    expect(html).toContain('<option value="2026-09-20" selected>');
+  });
+
+  it('рендерит выпадающие списки дат вылета и возврата', () => {
+    const html = renderAdminPage(dashboard());
+
+    expect(html).toContain('name="date"');
+    expect(html).toContain('name="rdate"');
+    expect(html).toContain('Дата вылета: все');
+    expect(html).toContain('Дата возврата: все');
   });
 
   it('строит ссылки сортировки с переключением направления', () => {
@@ -58,7 +87,7 @@ describe('renderAdminPage', () => {
 
   it('экранирует поисковый ввод', () => {
     const html = renderAdminPage(dashboard({
-      query: { scope: 'all', sort: 'city', direction: 'asc', search: '<script>', page: 1 }
+      query: { scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city', direction: 'asc', search: '<script>', page: 1 }
     }));
 
     expect(html).not.toContain('<script>');
