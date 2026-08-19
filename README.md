@@ -55,6 +55,52 @@ npm run verify
 
 `verify` последовательно запускает ESLint, strict TypeScript, все тесты и production build. Результат создаётся в `dist/`.
 
+## GitHub Actions: CI/CD
+
+Workflow `.github/workflows/ci-cd.yml` запускает `npm ci` и `npm run verify` для
+каждого pull request и push в `main`. После успешного CI push в `main`
+автоматически разворачивается на VDS через SSH.
+
+CD намеренно вызывает на сервере только root-owned скрипт
+`/usr/local/sbin/hot-ticket-deploy`. Скрипт принимает только точный SHA текущего
+`origin/main`, обновляет рабочую копию от имени `hotticket`, устанавливает
+зависимости, собирает приложение, запускает sync и перезапускает bot service, а
+также admin service, если он включён.
+
+Один раз подготовьте VDS после клонирования репозитория:
+
+```bash
+sudo apt install -y git openssh-server
+sudo adduser --disabled-password --gecos '' deploy
+sudo install -o root -g root -m 755 deploy/scripts/hot-ticket-deploy /usr/local/sbin/hot-ticket-deploy
+echo 'deploy ALL=(root) NOPASSWD: /usr/local/sbin/hot-ticket-deploy *' | sudo tee /etc/sudoers.d/hot-ticket-deploy >/dev/null
+sudo chmod 440 /etc/sudoers.d/hot-ticket-deploy
+sudo visudo -cf /etc/sudoers.d/hot-ticket-deploy
+sudo install -d -o deploy -g deploy -m 700 /home/deploy/.ssh
+sudoedit /home/deploy/.ssh/authorized_keys
+sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys
+sudo chmod 600 /home/deploy/.ssh/authorized_keys
+```
+
+В `authorized_keys` добавьте публичную часть отдельного deploy key. Приватную
+часть сохраните в GitHub, в `Settings → Secrets and variables → Actions`.
+
+Создайте environment `production` и добавьте secrets:
+
+- `VDS_HOST` — IP-адрес или hostname VDS;
+- `VDS_SSH_USER` — `deploy`;
+- `VDS_SSH_PRIVATE_KEY` — приватный SSH-ключ;
+- `VDS_KNOWN_HOSTS` — заранее проверенная строка host key сервера.
+
+Если SSH работает не на порту 22, добавьте environment variable
+`VDS_SSH_PORT`. Строку для `VDS_KNOWN_HOSTS` можно получить командой
+`ssh-keyscan -H -p 22 <IP-сервера>`, но перед сохранением обязательно сверьте
+fingerprint с ключом непосредственно на VDS.
+
+Пользователь `hotticket` должен иметь доступ к `origin` для `git fetch`. Для
+приватного репозитория настройте на VDS отдельный read-only GitHub deploy key в
+home-каталоге `/opt/hot-ticket-bot`.
+
 ## 1. Создание пользователя и каталога на VDS
 
 ```bash

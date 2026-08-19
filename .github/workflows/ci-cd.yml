@@ -1,0 +1,77 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint, typecheck, test and build
+        run: npm run verify
+
+  deploy:
+    name: Deploy to VDS
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: production
+      cancel-in-progress: false
+
+    steps:
+      - name: Configure SSH
+        env:
+          VDS_SSH_PRIVATE_KEY: ${{ secrets.VDS_SSH_PRIVATE_KEY }}
+          VDS_KNOWN_HOSTS: ${{ secrets.VDS_KNOWN_HOSTS }}
+        run: |
+          : "${VDS_SSH_PRIVATE_KEY:?Missing VDS_SSH_PRIVATE_KEY secret}"
+          : "${VDS_KNOWN_HOSTS:?Missing VDS_KNOWN_HOSTS secret}"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VDS_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VDS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy verified commit
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_SSH_USER: ${{ secrets.VDS_SSH_USER }}
+          VDS_SSH_PORT: ${{ vars.VDS_SSH_PORT || '22' }}
+        run: |
+          : "${VDS_HOST:?Missing VDS_HOST secret}"
+          : "${VDS_SSH_USER:?Missing VDS_SSH_USER secret}"
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -p "$VDS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VDS_SSH_USER@$VDS_HOST" \
+            sudo /usr/local/sbin/hot-ticket-deploy "$GITHUB_SHA"

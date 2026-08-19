@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly APP_USER='hotticket'
+readonly DEPLOY_DIRECTORY='/opt/hot-ticket-bot'
+readonly ENVIRONMENT_FILE='/etc/hot-ticket-bot.env'
+readonly EXPECTED_BRANCH='main'
+readonly COMMIT="${1:-}"
+
+if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+  echo 'Usage: hot-ticket-deploy <40-character-lowercase-commit-sha>' >&2
+  exit 64
+fi
+
+if [[ "$(id -u)" -ne 0 ]]; then
+  echo 'hot-ticket-deploy must be run as root.' >&2
+  exit 77
+fi
+
+run_as_app_user() {
+  /usr/sbin/runuser --user "$APP_USER" -- "$@"
+}
+
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" fetch --prune origin "$EXPECTED_BRANCH"
+
+readonly REMOTE_COMMIT="$(run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" rev-parse "origin/$EXPECTED_BRANCH")"
+readonly CURRENT_BRANCH="$(run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" branch --show-current)"
+
+if [[ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
+  echo "Expected branch $EXPECTED_BRANCH, found $CURRENT_BRANCH." >&2
+  exit 65
+fi
+
+if [[ "$REMOTE_COMMIT" != "$COMMIT" ]]; then
+  echo "origin/$EXPECTED_BRANCH is $REMOTE_COMMIT, expected $COMMIT." >&2
+  exit 65
+fi
+
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" merge --ff-only "$COMMIT"
+run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" ci
+run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" run build
+
+run_as_app_user /bin/bash -c '
+  set -a
+  source "$1"
+  cd "$2"
+  /usr/bin/node dist/entries/sync.js
+' _ "$ENVIRONMENT_FILE" "$DEPLOY_DIRECTORY"
+
+/usr/bin/systemctl restart hot-ticket-bot.service
+/usr/bin/systemctl is-active --quiet hot-ticket-bot.service
+
+if /usr/bin/systemctl is-enabled --quiet hot-ticket-admin.service; then
+  /usr/bin/systemctl restart hot-ticket-admin.service
+  /usr/bin/systemctl is-active --quiet hot-ticket-admin.service
+fi
+
+echo "Successfully deployed $COMMIT."
