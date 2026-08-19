@@ -101,6 +101,40 @@ fingerprint с ключом непосредственно на VDS.
 приватного репозитория настройте на VDS отдельный read-only GitHub deploy key в
 home-каталоге `/opt/hot-ticket-bot`.
 
+### Автоматическая настройка нового VDS
+
+Для переноса на новый сервер используйте идемпотентный bootstrap-скрипт
+`deploy/scripts/setup-vds.sh`. Сначала скопируйте или клонируйте Git-репозиторий
+в `/opt/hot-ticket-bot`, а также передайте на сервер публичный ключ пользователя
+`deploy` и production environment-файл. Затем выполните:
+
+```bash
+cd /opt/hot-ticket-bot
+sudo ./deploy/scripts/setup-vds.sh \
+  --deploy-public-key-file /tmp/hot-ticket-github-actions.pub \
+  --environment-file /tmp/hot-ticket-bot.env \
+  --start
+```
+
+Скрипт:
+
+- устанавливает Ubuntu-пакеты и Node.js 24;
+- создаёт или переиспользует пользователей `hotticket` и `deploy`;
+- настраивает каталоги, SSH `authorized_keys`, sudoers, systemd и cron;
+- устанавливает `/etc/hot-ticket-bot.env` с правами `600`;
+- запускает `npm ci`, полный `npm run verify`, первый sync и bot service.
+
+Для запуска опциональной admin-панели добавьте `--enable-admin`. Без `--start`
+скрипт подготовит и проверит сервер, но не установит cron и не запустит сервисы.
+При повторном запуске существующий `/etc/hot-ticket-bot.env` и SSH-ключи
+сохраняются, если соответствующие файлы не переданы через параметры.
+
+Посмотреть все параметры:
+
+```bash
+sudo ./deploy/scripts/setup-vds.sh --help
+```
+
 ## 1. Создание пользователя и каталога на VDS
 
 ```bash
