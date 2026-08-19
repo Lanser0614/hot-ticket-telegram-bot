@@ -63,6 +63,21 @@ interface SeedUserInput {
   telegramChatId: number;
 }
 
+interface DestinationCacheRecord {
+  destinations: readonly string[];
+  updatedAt: Date;
+}
+
+function destinationCacheKey(query: DestinationQuery): string {
+  return [
+    query.originCode,
+    query.currencyCode,
+    query.departureDateFrom,
+    query.tripClass,
+    query.baggageRequired ? '1' : '0'
+  ].join('|');
+}
+
 export class MemoryStore implements
   UserRepository,
   TicketRepository,
@@ -77,6 +92,7 @@ export class MemoryStore implements
   private readonly tickets: StoredTicket[] = [];
   private readonly subscriptions: Subscription[] = [];
   private readonly sessions = new Map<number, UserSession>();
+  private readonly destinationCache = new Map<string, DestinationCacheRecord>();
   private syncSources: SyncSource[] = [];
   private readonly locks = new Map<string, Date>();
   private nextUserId = 1;
@@ -88,6 +104,7 @@ export class MemoryStore implements
   public readonly priceHistoryRecords: PriceHistoryRecord[] = [];
   public readonly notificationRecords: NotificationRecord[] = [];
   public readonly syncRunRecords: SyncRunRecord[] = [];
+  public activeDestinationQueryCount = 0;
 
   public constructor(private readonly clock: Clock) {}
 
@@ -267,6 +284,7 @@ export class MemoryStore implements
   }
 
   public listActiveDestinations(query: DestinationQuery): Promise<readonly string[]> {
+    this.activeDestinationQueryCount += 1;
     const codes = new Set<string>();
     for (const ticket of this.tickets) {
       if (
@@ -279,6 +297,38 @@ export class MemoryStore implements
       ) codes.add(ticket.destinationCode);
     }
     return Promise.resolve([...codes].sort());
+  }
+
+  public getCachedActiveDestinations(
+    query: DestinationQuery
+  ): Promise<readonly string[] | null> {
+    const record = this.destinationCache.get(destinationCacheKey(query));
+    return Promise.resolve(record === undefined ? null : [...record.destinations]);
+  }
+
+  public saveActiveDestinationsCache(
+    query: DestinationQuery,
+    destinations: readonly string[],
+    updatedAt: Date
+  ): Promise<void> {
+    this.destinationCache.set(destinationCacheKey(query), {
+      destinations: [...destinations],
+      updatedAt: new Date(updatedAt)
+    });
+    return Promise.resolve();
+  }
+
+  public pruneActiveDestinationsCache(
+    source: SyncSourceKey,
+    departureDateFrom: string
+  ): Promise<void> {
+    const prefix = `${source.originCode}|${source.currencyCode}|`;
+    for (const key of this.destinationCache.keys()) {
+      if (key.startsWith(prefix) && !key.startsWith(`${prefix}${departureDateFrom}|`)) {
+        this.destinationCache.delete(key);
+      }
+    }
+    return Promise.resolve();
   }
 
   public addPrice(ticketId: number, price: number, observedAt: Date): Promise<void> {

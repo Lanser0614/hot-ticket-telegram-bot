@@ -192,4 +192,32 @@ describe('ApplicationRepositories on SQLite', () => {
     expect(ids).toEqual(Array.from({ length: 23 }, (_, index) => index + 1));
     database.close();
   });
+
+  it('сохраняет, обновляет и очищает кэш направлений', async () => {
+    const { database, repositories } = createRepositories();
+    const now = new FixedClock().now();
+    const query = {
+      originCode: 'TAS',
+      currencyCode: 'UZS',
+      departureDateFrom: '2026-08-04',
+      tripClass: 'economy' as const,
+      baggageRequired: false
+    };
+
+    await expect(repositories.getCachedActiveDestinations(query)).resolves.toBeNull();
+    await repositories.saveActiveDestinationsCache(query, ['BHK', 'IST'], now);
+    await expect(repositories.getCachedActiveDestinations(query))
+      .resolves.toEqual(['BHK', 'IST']);
+
+    await repositories.saveActiveDestinationsCache(query, ['DXB'], now);
+    await expect(repositories.getCachedActiveDestinations(query)).resolves.toEqual(['DXB']);
+
+    const nextDay = { ...query, departureDateFrom: '2026-08-05' };
+    await repositories.saveActiveDestinationsCache(nextDay, [], now);
+    await repositories.pruneActiveDestinationsCache(query, nextDay.departureDateFrom);
+
+    await expect(repositories.getCachedActiveDestinations(query)).resolves.toBeNull();
+    await expect(repositories.getCachedActiveDestinations(nextDay)).resolves.toEqual([]);
+    database.close();
+  });
 });

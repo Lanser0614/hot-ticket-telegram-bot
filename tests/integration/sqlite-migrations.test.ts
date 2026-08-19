@@ -48,9 +48,11 @@ describe('SQLite migrations', () => {
     expect(await database.get('PRAGMA foreign_keys')).toEqual({ foreign_keys: 1 });
     expect(await database.get('PRAGMA busy_timeout')).toEqual({ timeout: 5_000 });
     expect(await database.get('SELECT count(*) AS count FROM schema_migrations'))
-      .toEqual({ count: 4 });
+      .toEqual({ count: 5 });
     expect(await database.get("SELECT name FROM sqlite_master WHERE name = 'app_state'"))
       .toEqual({ name: 'app_state' });
+    expect(await database.get("SELECT name FROM sqlite_master WHERE name = 'destination_cache'"))
+      .toEqual({ name: 'destination_cache' });
     database.close();
   });
 

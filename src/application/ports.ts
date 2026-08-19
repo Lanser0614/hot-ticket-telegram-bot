@@ -36,6 +36,16 @@ export interface TicketRepository {
   deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number>;
   listActive(query: TicketQuery): Promise<readonly StoredTicket[]>;
   listActiveDestinations(query: DestinationQuery): Promise<readonly string[]>;
+  getCachedActiveDestinations(query: DestinationQuery): Promise<readonly string[] | null>;
+  saveActiveDestinationsCache(
+    query: DestinationQuery,
+    destinations: readonly string[],
+    updatedAt: Date
+  ): Promise<void>;
+  pruneActiveDestinationsCache(
+    source: SyncSourceKey,
+    departureDateFrom: string
+  ): Promise<void>;
 }
 
 export interface PriceHistoryRepository {

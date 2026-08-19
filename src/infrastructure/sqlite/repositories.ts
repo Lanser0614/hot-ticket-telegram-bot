@@ -75,6 +75,14 @@ function jsonValue(value: unknown): unknown {
   return JSON.parse(value) as unknown;
 }
 
+function stringArray(row: Row, key: string): readonly string[] {
+  const value = jsonValue(row[key]);
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new TypeError(`База вернула некорректный массив ${key}`);
+  }
+  return value;
+}
+
 function tripClass(row: Row, key: string): TripClass {
   const value = requiredString(row, key);
   if (value !== 'economy' && value !== 'business') {
@@ -393,6 +401,71 @@ export class ApplicationRepositories implements
       ORDER BY destination_code ASC
     `, parameters);
     return rows.map((row) => requiredString(row, 'destination_code'));
+  }
+
+  public async getCachedActiveDestinations(
+    query: DestinationQuery
+  ): Promise<readonly string[] | null> {
+    const row = await this.db.get(`
+      SELECT destination_codes FROM destination_cache
+      WHERE origin_code = :origin
+        AND currency_code = :currency
+        AND departure_date_from = :dateFrom
+        AND trip_class = :tripClass
+        AND baggage_required = :baggageRequired
+    `, {
+      ':origin': query.originCode,
+      ':currency': query.currencyCode,
+      ':dateFrom': query.departureDateFrom,
+      ':tripClass': query.tripClass,
+      ':baggageRequired': query.baggageRequired ? 1 : 0
+    });
+    return row === null ? null : stringArray(row, 'destination_codes');
+  }
+
+  public async saveActiveDestinationsCache(
+    query: DestinationQuery,
+    destinations: readonly string[],
+    updatedAt: Date
+  ): Promise<void> {
+    await this.db.run(`
+      INSERT INTO destination_cache (
+        origin_code, currency_code, departure_date_from, trip_class,
+        baggage_required, destination_codes, updated_at
+      ) VALUES (
+        :origin, :currency, :dateFrom, :tripClass,
+        :baggageRequired, :destinations, :updatedAt
+      )
+      ON CONFLICT(
+        origin_code, currency_code, departure_date_from, trip_class, baggage_required
+      ) DO UPDATE SET
+        destination_codes = excluded.destination_codes,
+        updated_at = excluded.updated_at
+    `, {
+      ':origin': query.originCode,
+      ':currency': query.currencyCode,
+      ':dateFrom': query.departureDateFrom,
+      ':tripClass': query.tripClass,
+      ':baggageRequired': query.baggageRequired ? 1 : 0,
+      ':destinations': JSON.stringify(destinations),
+      ':updatedAt': seconds(updatedAt)
+    });
+  }
+
+  public async pruneActiveDestinationsCache(
+    source: SyncSourceKey,
+    departureDateFrom: string
+  ): Promise<void> {
+    await this.db.run(`
+      DELETE FROM destination_cache
+      WHERE origin_code = :origin
+        AND currency_code = :currency
+        AND departure_date_from <> :dateFrom
+    `, {
+      ':origin': source.originCode,
+      ':currency': source.currencyCode,
+      ':dateFrom': departureDateFrom
+    });
   }
 
   public async addPrice(ticketId: number, price: number, observedAt: Date): Promise<void> {

@@ -152,6 +152,48 @@ describe('SyncTicketsService', () => {
     expect(fixture.store.syncRunRecords.at(-1)?.status).toBe('success');
   });
 
+  it('обновляет кэш направлений для всех вариантов фильтров', async () => {
+    const fixture = createFixture();
+    fixture.provider.tickets.set('TAS|UZS', [
+      createTicket(),
+      {
+        ...createTicket(),
+        externalKey: 'business-with-baggage',
+        destinationCode: 'DXB',
+        tripClass: 'business',
+        hasBaggage: true
+      }
+    ]);
+
+    await fixture.service.execute(source);
+
+    const base = {
+      originCode: 'TAS',
+      currencyCode: 'UZS',
+      departureDateFrom: '2026-08-04'
+    };
+    await expect(fixture.store.getCachedActiveDestinations({
+      ...base,
+      tripClass: 'economy',
+      baggageRequired: false
+    })).resolves.toEqual(['IST']);
+    await expect(fixture.store.getCachedActiveDestinations({
+      ...base,
+      tripClass: 'economy',
+      baggageRequired: true
+    })).resolves.toEqual([]);
+    await expect(fixture.store.getCachedActiveDestinations({
+      ...base,
+      tripClass: 'business',
+      baggageRequired: false
+    })).resolves.toEqual(['DXB']);
+    await expect(fixture.store.getCachedActiveDestinations({
+      ...base,
+      tripClass: 'business',
+      baggageRequired: true
+    })).resolves.toEqual(['DXB']);
+  });
+
   it('не создаёт дубликаты при повторном sync', async () => {
     const fixture = createFixture();
     fixture.provider.tickets.set('TAS|UZS', [createTicket()]);

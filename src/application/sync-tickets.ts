@@ -13,8 +13,12 @@ import type {
   UserRepository
 } from './ports.js';
 import { validateHotOffersInput } from '../domain/codes.js';
+import { dateInTimeZone } from '../domain/dates.js';
 import { detectTicketEvent } from '../domain/ticket-events.js';
-import { matchesUserTicketPreferences } from '../domain/travel-preferences.js';
+import {
+  matchesUserTicketPreferences,
+  type TripClass
+} from '../domain/travel-preferences.js';
 
 interface SyncTicketsDependencies {
   provider: HotTicketsProvider;
@@ -32,6 +36,8 @@ interface SyncTicketsDependencies {
 
 const LOCK_TTL_SECONDS = 300;
 const TICKET_EXPIRATION_MS = 6 * 60 * 60 * 1_000;
+const DESTINATION_CACHE_TRIP_CLASSES: readonly TripClass[] = ['economy', 'business'];
+const DESTINATION_CACHE_BAGGAGE_OPTIONS = [false, true] as const;
 
 export class SyncTicketsService {
   public constructor(private readonly dependencies: SyncTicketsDependencies) {}
@@ -112,6 +118,7 @@ export class SyncTicketsService {
         source,
         new Date(observedAt.getTime() - TICKET_EXPIRATION_MS)
       );
+      await this.refreshDestinationCache(source, observedAt);
       await this.dependencies.syncRunRepository.complete(runId, result, this.dependencies.clock.now());
       return result;
     } catch (error: unknown) {
@@ -126,5 +133,24 @@ export class SyncTicketsService {
     } finally {
       await this.dependencies.lockRepository.release(lockKey);
     }
+  }
+
+  private async refreshDestinationCache(source: SyncSourceKey, observedAt: Date): Promise<void> {
+    const departureDateFrom = dateInTimeZone(observedAt, 'Asia/Tashkent');
+    for (const tripClass of DESTINATION_CACHE_TRIP_CLASSES) {
+      for (const baggageRequired of DESTINATION_CACHE_BAGGAGE_OPTIONS) {
+        const query = { ...source, departureDateFrom, tripClass, baggageRequired };
+        const destinations = await this.dependencies.ticketRepository.listActiveDestinations(query);
+        await this.dependencies.ticketRepository.saveActiveDestinationsCache(
+          query,
+          destinations,
+          observedAt
+        );
+      }
+    }
+    await this.dependencies.ticketRepository.pruneActiveDestinationsCache(
+      source,
+      departureDateFrom
+    );
   }
 }

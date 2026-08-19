@@ -78,4 +78,34 @@ describe('TicketService pagination', () => {
     await expect(service.listPageForTelegramUser(100, { offset }))
       .rejects.toThrow('Некорректная страница');
   });
+
+  it('загружает направления из базы при cache miss и сохраняет результат', async () => {
+    const { store, service } = await fixture();
+    await store.upsert(ticket(1, { destinationCode: 'IST' }), new Date('2026-08-05T12:00:00Z'));
+
+    const first = await service.listAvailableDestinations(100, 'international');
+    const second = await service.listAvailableDestinations(100, 'international');
+
+    expect(first).toEqual([{ code: 'IST', name: 'Стамбул' }]);
+    expect(second).toEqual(first);
+    expect(store.activeDestinationQueryCount).toBe(1);
+  });
+
+  it('использует общий кэш для локальной и международной вкладок', async () => {
+    const { store, service } = await fixture();
+    const query = {
+      originCode: 'TAS',
+      currencyCode: 'UZS',
+      departureDateFrom: '2026-08-05',
+      tripClass: 'business' as const,
+      baggageRequired: true
+    };
+    await store.saveActiveDestinationsCache(query, ['BHK', 'IST'], new Date('2026-08-05T12:00:00Z'));
+
+    await expect(service.listAvailableDestinations(100, 'domestic'))
+      .resolves.toEqual([{ code: 'BHK', name: 'Бухара' }]);
+    await expect(service.listAvailableDestinations(100, 'international'))
+      .resolves.toEqual([{ code: 'IST', name: 'Стамбул' }]);
+    expect(store.activeDestinationQueryCount).toBe(0);
+  });
 });

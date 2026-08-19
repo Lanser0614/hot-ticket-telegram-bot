@@ -63,13 +63,18 @@ export class TicketService {
     const user = await this.users.findByTelegramUserId(telegramUserId);
     if (user === null) throw new ValidationError('Сначала выполните /start');
     const departureDateFrom = dateInTimeZone(this.clock.now(), 'Asia/Tashkent');
-    const codes = await this.tickets.listActiveDestinations({
+    const query = {
       originCode: DEFAULT_ORIGIN_CODE,
       currencyCode: DEFAULT_CURRENCY_CODE,
       departureDateFrom,
       tripClass: user.preferredTripClass,
       baggageRequired: user.baggageRequired
-    });
+    };
+    let codes = await this.tickets.getCachedActiveDestinations(query);
+    if (codes === null) {
+      codes = await this.tickets.listActiveDestinations(query);
+      await this.tickets.saveActiveDestinationsCache(query, codes, this.clock.now());
+    }
     const destinations: AvailableDestination[] = [];
     for (const code of codes) {
       const isDomestic = getLocationCountryCode(code) === DOMESTIC_COUNTRY_CODE;
