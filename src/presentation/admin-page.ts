@@ -186,7 +186,7 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
   <style>${STYLES}</style>
 </head>
 <body>
-  <h1>✈️ HotTicket — админ-панель</h1>
+  <h1>✈️ HotTicket — админ-панель Hello</h1>
   ${flashHtml}
   ${statsCards(dashboard)}
   <div class="toolbar">
