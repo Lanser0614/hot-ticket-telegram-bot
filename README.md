@@ -67,10 +67,33 @@ CD намеренно вызывает на сервере только root-own
 `origin/main`, принудительно приводит tracked-файлы рабочей копии к этому commit,
 удаляет untracked-файлы, устанавливает зависимости, собирает приложение,
 запускает sync и перезапускает bot service, а также admin service, если он
-включён. Локальные изменения внутри Git-репозитория на VDS при deployment
-удаляются. Игнорируемые `.env`, `data`, `backups`, `node_modules` и `dist` команда
-`git clean -fd` не затрагивает; production environment по-прежнему хранится в
-`/etc/hot-ticket-bot.env`.
+включён. Перед fetch скрипт восстанавливает владельца рабочей копии
+`hotticket:hotticket`, если обнаруживает файлы другого владельца, а после
+checkout обновляет собственную root-owned копию. Локальные изменения внутри
+Git-репозитория на VDS при deployment удаляются. Игнорируемые `.env`, `data`,
+`backups`, `node_modules` и `dist` команда `git clean -fd` не затрагивает;
+production environment по-прежнему хранится в `/etc/hot-ticket-bot.env`.
+
+Не запускайте `git pull`, `git fetch` или другие изменяющие Git-команды в этом
+каталоге от `root`: используйте `sudo -u hotticket git -C /opt/hot-ticket-bot ...`.
+Если старый deploy-скрипт уже завершился с `insufficient permission for adding
+an object to repository database .git/objects`, один раз восстановите владельца
+и повторно запустите job:
+
+```bash
+sudo chown -R hotticket:hotticket /opt/hot-ticket-bot
+sudo -u hotticket test -w /opt/hot-ticket-bot/.git/objects
+```
+
+После первого успешного deployment с новой версией установите обновлённый
+скрипт вручную; далее он будет обновлять себя автоматически:
+
+```bash
+sudo install -o root -g root -m 755 \
+  /opt/hot-ticket-bot/deploy/scripts/hot-ticket-deploy \
+  /usr/local/sbin/hot-ticket-deploy
+sudo bash -n /usr/local/sbin/hot-ticket-deploy
+```
 
 Один раз подготовьте VDS после клонирования репозитория:
 

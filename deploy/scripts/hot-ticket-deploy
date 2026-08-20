@@ -5,6 +5,8 @@ set -Eeuo pipefail
 readonly APP_USER='hotticket'
 readonly DEPLOY_DIRECTORY='/opt/hot-ticket-bot'
 readonly ENVIRONMENT_FILE='/etc/hot-ticket-bot.env'
+readonly DEPLOY_COMMAND='/usr/local/sbin/hot-ticket-deploy'
+readonly DEPLOY_COMMAND_UPDATE='/usr/local/sbin/hot-ticket-deploy.new'
 readonly EXPECTED_BRANCH='main'
 readonly COMMIT="${1:-}"
 
@@ -22,6 +24,18 @@ run_as_app_user() {
   /usr/sbin/runuser --user "$APP_USER" -- "$@"
 }
 
+readonly APP_GROUP="$(id -gn "$APP_USER")"
+readonly INCORRECTLY_OWNED_PATH="$(
+  /usr/bin/find "$DEPLOY_DIRECTORY" -xdev \
+    \( ! -user "$APP_USER" -o ! -group "$APP_GROUP" \) \
+    -print -quit
+)"
+
+if [[ -n "$INCORRECTLY_OWNED_PATH" ]]; then
+  echo "Repairing repository ownership (found $INCORRECTLY_OWNED_PATH)."
+  /usr/bin/chown -R "$APP_USER:$APP_GROUP" "$DEPLOY_DIRECTORY"
+fi
+
 run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" fetch --prune origin "$EXPECTED_BRANCH"
 
 readonly REMOTE_COMMIT="$(run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" rev-parse "origin/$EXPECTED_BRANCH")"
@@ -36,6 +50,9 @@ run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" reset --hard "$COMMIT"
 run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" clean -fd
 run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" branch \
   --set-upstream-to="origin/$EXPECTED_BRANCH" "$EXPECTED_BRANCH"
+/usr/bin/install -o root -g root -m 755 \
+  "$DEPLOY_DIRECTORY/deploy/scripts/hot-ticket-deploy" "$DEPLOY_COMMAND_UPDATE"
+/usr/bin/mv -f "$DEPLOY_COMMAND_UPDATE" "$DEPLOY_COMMAND"
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" ci
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" run build
 

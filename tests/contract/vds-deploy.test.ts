@@ -51,6 +51,9 @@ describe('VDS deploy files', () => {
     expect(deploy).toContain('checkout --force -B "$EXPECTED_BRANCH" "$COMMIT"');
     expect(deploy).toContain('reset --hard "$COMMIT"');
     expect(deploy).toContain('clean -fd');
+    expect(deploy).toContain('/usr/bin/chown -R "$APP_USER:$APP_GROUP" "$DEPLOY_DIRECTORY"');
+    expect(deploy).toContain('"$DEPLOY_DIRECTORY/deploy/scripts/hot-ticket-deploy" "$DEPLOY_COMMAND_UPDATE"');
+    expect(deploy).toContain('/usr/bin/mv -f "$DEPLOY_COMMAND_UPDATE" "$DEPLOY_COMMAND"');
     expect(deploy).not.toContain('merge --ff-only');
   });
 });
