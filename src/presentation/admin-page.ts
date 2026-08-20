@@ -151,7 +151,7 @@ const STYLES = `
   .tabs { display: flex; gap: 6px; }
   .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; }
   .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-  form.search { margin-left: auto; display: flex; gap: 6px; }
+  form.search { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .filter-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
   .date-control { display: inline-flex; align-items: center; gap: 4px; }
   .calendar-button { padding: 6px 9px; background: #fff; color: #1a1a1a; border: 1px solid #d1d5db; }
@@ -166,7 +166,8 @@ const STYLES = `
   input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #fff; }
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
   button.secondary { background: #10b981; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #e3e5e8; }
+  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e3e5e8; }
+  table { width: 100%; min-width: 720px; border-collapse: collapse; background: #fff; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef0f2; font-size: 14px; }
   th { background: #fafbfc; font-weight: 600; }
   th a { color: #1a1a1a; text-decoration: none; }
@@ -203,7 +204,7 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
   <style>${STYLES}</style>
 </head>
 <body>
-  <h1>✈️ HotTicket — админ-панель Hello</h1>
+  <h1>✈️ HotTicket — админ-панель</h1>
   ${flashHtml}
   ${statsCards(dashboard)}
   <div class="toolbar">
@@ -231,10 +232,12 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
       <button type="submit">Найти</button>
     </form>
   </div>
-  <table>
-    <thead><tr>${headers}</tr></thead>
-    <tbody>${body}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>${headers}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>
   ${pagination(dashboard)}
   <script>
     for (const button of document.querySelectorAll('[data-date-target]')) {
