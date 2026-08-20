@@ -43,4 +43,14 @@ describe('VDS deploy files', () => {
     expect(readme).toContain('cron');
     expect(readme).toContain('внешний cron-сервис не нужны');
   });
+
+  it('принудительно приводит VDS к проверенному commit из origin/main', () => {
+    const deploy = readFileSync('deploy/scripts/hot-ticket-deploy', 'utf8');
+    expect(deploy).toContain('fetch --prune origin "$EXPECTED_BRANCH"');
+    expect(deploy).toContain('rev-parse "origin/$EXPECTED_BRANCH"');
+    expect(deploy).toContain('checkout --force -B "$EXPECTED_BRANCH" "$COMMIT"');
+    expect(deploy).toContain('reset --hard "$COMMIT"');
+    expect(deploy).toContain('clean -fd');
+    expect(deploy).not.toContain('merge --ff-only');
+  });
 });

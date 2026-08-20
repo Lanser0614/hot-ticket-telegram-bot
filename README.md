@@ -64,9 +64,13 @@ Workflow `.github/workflows/ci-cd.yml` запускает `npm ci` и `npm run v
 
 CD намеренно вызывает на сервере только root-owned скрипт
 `/usr/local/sbin/hot-ticket-deploy`. Скрипт принимает только точный SHA текущего
-`origin/main`, обновляет рабочую копию от имени `hotticket`, устанавливает
-зависимости, собирает приложение, запускает sync и перезапускает bot service, а
-также admin service, если он включён.
+`origin/main`, принудительно приводит tracked-файлы рабочей копии к этому commit,
+удаляет untracked-файлы, устанавливает зависимости, собирает приложение,
+запускает sync и перезапускает bot service, а также admin service, если он
+включён. Локальные изменения внутри Git-репозитория на VDS при deployment
+удаляются. Игнорируемые `.env`, `data`, `backups`, `node_modules` и `dist` команда
+`git clean -fd` не затрагивает; production environment по-прежнему хранится в
+`/etc/hot-ticket-bot.env`.
 
 Один раз подготовьте VDS после клонирования репозитория:
 

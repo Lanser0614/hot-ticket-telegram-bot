@@ -25,19 +25,17 @@ run_as_app_user() {
 run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" fetch --prune origin "$EXPECTED_BRANCH"
 
 readonly REMOTE_COMMIT="$(run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" rev-parse "origin/$EXPECTED_BRANCH")"
-readonly CURRENT_BRANCH="$(run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" branch --show-current)"
-
-if [[ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
-  echo "Expected branch $EXPECTED_BRANCH, found $CURRENT_BRANCH." >&2
-  exit 65
-fi
 
 if [[ "$REMOTE_COMMIT" != "$COMMIT" ]]; then
   echo "origin/$EXPECTED_BRANCH is $REMOTE_COMMIT, expected $COMMIT." >&2
   exit 65
 fi
 
-run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" merge --ff-only "$COMMIT"
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" checkout --force -B "$EXPECTED_BRANCH" "$COMMIT"
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" reset --hard "$COMMIT"
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" clean -fd
+run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" branch \
+  --set-upstream-to="origin/$EXPECTED_BRANCH" "$EXPECTED_BRANCH"
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" ci
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" run build
 
