@@ -68,7 +68,7 @@ describe('renderAdminPage', () => {
     expect(html).toContain('type="date" name="rdate" value="2026-09-20"');
   });
 
-  it('рендерит date picker для вылета и возврата', () => {
+  it('рендерит поля дат вылета и возврата с подписями', () => {
     const html = renderAdminPage(dashboard());
 
     expect(html).toContain('type="date" name="date"');
@@ -76,9 +76,39 @@ describe('renderAdminPage', () => {
     expect(html).toContain('Дата вылета');
     expect(html).toContain('Дата возврата');
     expect(html).toContain('onchange="this.form.requestSubmit()"');
-    expect(html).toContain('data-date-target="filter-date"');
-    expect(html).toContain('data-date-target="filter-rdate"');
-    expect(html).toContain("input.showPicker()");
+    expect(html).toContain('<label for="filter-date">');
+    expect(html).toContain('<label for="filter-rdate">');
+    expect(html).toContain('id="filter-date"');
+    expect(html).toContain('id="filter-rdate"');
+  });
+
+  it('не дублирует нативный date picker собственной кнопкой календаря', () => {
+    const html = renderAdminPage(dashboard());
+
+    expect(html).not.toContain('data-date-target');
+    expect(html).not.toContain('calendar-button');
+    expect(html).not.toContain('input.showPicker()');
+  });
+
+  it('показывает сброс фильтров только когда фильтр активен', () => {
+    const withoutFilters = renderAdminPage(dashboard());
+    expect(withoutFilters).not.toContain('class="reset"');
+
+    const withSearch = renderAdminPage(dashboard({
+      query: {
+        scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city',
+        direction: 'asc', search: 'IST', page: 1
+      }
+    }));
+    expect(withSearch).toContain('<a class="reset" href="/">Сбросить</a>');
+
+    const withScope = renderAdminPage(dashboard({
+      query: {
+        scope: 'domestic', trip: 'all', date: '', returnDate: '', sort: 'city',
+        direction: 'asc', search: '', page: 1
+      }
+    }));
+    expect(withScope).toContain('class="reset"');
   });
 
   it('рендерит searchable список городов из кэша и сохраняет выбранный город', () => {
