@@ -75,6 +75,10 @@ describe('renderAdminPage', () => {
     expect(html).toContain('type="date" name="rdate"');
     expect(html).toContain('Дата вылета');
     expect(html).toContain('Дата возврата');
+    expect(html).toContain('onchange="this.form.requestSubmit()"');
+    expect(html).toContain('data-date-target="filter-date"');
+    expect(html).toContain('data-date-target="filter-rdate"');
+    expect(html).toContain("input.showPicker()");
   });
 
   it('рендерит searchable список городов из кэша и сохраняет выбранный город', () => {
@@ -85,10 +89,14 @@ describe('renderAdminPage', () => {
       }
     }));
 
-    expect(html).toContain('type="search" name="q" list="cached-destinations"');
+    expect(html).toContain('data-city-combobox');
+    expect(html).toContain('type="search" name="q" role="combobox"');
     expect(html).toContain('value="IST"');
-    expect(html).toContain('<datalist id="cached-destinations">');
-    expect(html).toContain('<option value="IST">Стамбул (IST)</option>');
+    expect(html).toContain('class="city-options" role="listbox"');
+    expect(html).toContain('data-city-code="IST"');
+    expect(html).toContain('Стамбул <span>IST</span>');
+    expect(html).toContain("input.value = option.dataset.cityCode ?? ''");
+    expect(html).toContain('input.form?.requestSubmit()');
   });
 
   it('строит ссылки сортировки с переключением направления', () => {
@@ -103,7 +111,7 @@ describe('renderAdminPage', () => {
       query: { scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city', direction: 'asc', search: '<script>', page: 1 }
     }));
 
-    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('value="<script>"');
     expect(html).toContain('&lt;script&gt;');
   });
 

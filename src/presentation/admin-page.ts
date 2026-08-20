@@ -77,17 +77,18 @@ function dateInput(
   label: string,
   selected: string
 ): string {
-  return `<label class="filter-field"><span>${escapeHtml(label)}</span><input type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}"></label>`;
+  const id = `filter-${name}`;
+  return `<div class="filter-field"><label for="${id}">${escapeHtml(label)}</label><span class="date-control"><input id="${id}" type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}" onchange="this.form.requestSubmit()"><button class="calendar-button" type="button" data-date-target="${id}" aria-label="Открыть календарь: ${escapeHtml(label)}">📅</button></span></div>`;
 }
 
 function cityCombobox(
   destinations: readonly AdminDestinationOption[],
   selected: string
 ): string {
-  const options = destinations.map((destination) => (
-    `<option value="${escapeHtml(destination.code)}">${escapeHtml(destination.name)} (${escapeHtml(destination.code)})</option>`
+  const options = destinations.map((destination, index) => (
+    `<button id="city-option-${index}" class="city-option" type="button" role="option" aria-selected="false" data-city-code="${escapeHtml(destination.code)}" data-city-search="${escapeHtml(`${destination.name} ${destination.code}`.toLocaleLowerCase('ru'))}">${escapeHtml(destination.name)} <span>${escapeHtml(destination.code)}</span></button>`
   ));
-  return `<input type="search" name="q" list="cached-destinations" aria-label="Город" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><datalist id="cached-destinations">${options.join('')}</datalist>`;
+  return `<div class="city-combobox" data-city-combobox><input type="search" name="q" role="combobox" aria-label="Город" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><div id="city-options" class="city-options" role="listbox" hidden>${options.join('')}</div></div>`;
 }
 
 function row(view: AdminTicketView): string {
@@ -152,6 +153,16 @@ const STYLES = `
   .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
   form.search { margin-left: auto; display: flex; gap: 6px; }
   .filter-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
+  .date-control { display: inline-flex; align-items: center; gap: 4px; }
+  .calendar-button { padding: 6px 9px; background: #fff; color: #1a1a1a; border: 1px solid #d1d5db; }
+  .city-combobox { position: relative; min-width: 220px; }
+  .city-combobox input { width: 100%; }
+  .city-options { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow-y: auto; padding: 4px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 24px rgb(0 0 0 / 14%); }
+  .city-options[hidden] { display: none; }
+  .city-option { display: block; width: 100%; padding: 8px 10px; border-radius: 6px; background: transparent; color: #1a1a1a; text-align: left; }
+  .city-option[hidden] { display: none; }
+  .city-option span { float: right; color: #6b7280; font-size: 12px; }
+  .city-option:hover, .city-option.active { background: #eff6ff; color: #1d4ed8; }
   input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #fff; }
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
   button.secondary { background: #10b981; }
@@ -225,6 +236,98 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
     <tbody>${body}</tbody>
   </table>
   ${pagination(dashboard)}
+  <script>
+    for (const button of document.querySelectorAll('[data-date-target]')) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        const input = document.getElementById(button.dataset.dateTarget);
+        if (!(input instanceof HTMLInputElement)) return;
+        if (typeof input.showPicker === 'function') input.showPicker();
+        else {
+          input.focus();
+          input.click();
+        }
+      });
+    }
+
+    for (const combobox of document.querySelectorAll('[data-city-combobox]')) {
+      const input = combobox.querySelector('input[role="combobox"]');
+      const list = combobox.querySelector('[role="listbox"]');
+      const options = Array.from(combobox.querySelectorAll('[data-city-code]'));
+      if (!(input instanceof HTMLInputElement) || !(list instanceof HTMLElement)) continue;
+
+      let activeOption = null;
+      const visibleOptions = () => options.filter((option) => !option.hidden);
+      const setActiveOption = (option) => {
+        for (const item of options) {
+          const active = item === option;
+          item.classList.toggle('active', active);
+          item.setAttribute('aria-selected', String(active));
+        }
+        activeOption = option;
+        if (option === null) input.removeAttribute('aria-activedescendant');
+        else {
+          input.setAttribute('aria-activedescendant', option.id);
+          option.scrollIntoView({ block: 'nearest' });
+        }
+      };
+      const closeOptions = () => {
+        list.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+        setActiveOption(null);
+      };
+      const showOptions = (search) => {
+        const needle = search.trim().toLocaleLowerCase('ru');
+        for (const option of options) {
+          option.hidden = needle !== '' && !option.dataset.citySearch.includes(needle);
+        }
+        list.hidden = visibleOptions().length === 0;
+        input.setAttribute('aria-expanded', String(!list.hidden));
+        setActiveOption(null);
+      };
+      const selectOption = (option) => {
+        input.value = option.dataset.cityCode ?? '';
+        closeOptions();
+        input.form?.requestSubmit();
+      };
+
+      input.addEventListener('focus', () => showOptions(''));
+      input.addEventListener('click', () => {
+        if (list.hidden) showOptions('');
+      });
+      input.addEventListener('input', () => showOptions(input.value));
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeOptions();
+          return;
+        }
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+        const visible = visibleOptions();
+        if (visible.length === 0) return;
+        if (event.key === 'Enter') {
+          if (list.hidden) return;
+          event.preventDefault();
+          selectOption(activeOption ?? visible[0]);
+          return;
+        }
+        event.preventDefault();
+        if (list.hidden) showOptions(input.value);
+        const currentIndex = visible.indexOf(activeOption);
+        const nextIndex = event.key === 'ArrowDown'
+          ? (currentIndex + 1) % visible.length
+          : (currentIndex <= 0 ? visible.length - 1 : currentIndex - 1);
+        setActiveOption(visible[nextIndex]);
+      });
+
+      for (const option of options) {
+        option.addEventListener('mousedown', (event) => event.preventDefault());
+        option.addEventListener('click', () => selectOption(option));
+      }
+      document.addEventListener('click', (event) => {
+        if (!combobox.contains(event.target)) closeOptions();
+      });
+    }
+  </script>
 </body>
 </html>`;
 }
