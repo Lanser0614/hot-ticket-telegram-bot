@@ -1,6 +1,7 @@
 import type {
   AdminDashboard,
   AdminDestinationOption,
+  AdminQuery,
   AdminScope,
   AdminSort,
   AdminTicketView,
@@ -78,7 +79,7 @@ function dateInput(
   selected: string
 ): string {
   const id = `filter-${name}`;
-  return `<div class="filter-field"><label for="${id}">${escapeHtml(label)}</label><span class="date-control"><input id="${id}" type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}" onchange="this.form.requestSubmit()"><button class="calendar-button" type="button" data-date-target="${id}" aria-label="Открыть календарь: ${escapeHtml(label)}">📅</button></span></div>`;
+  return `<div class="filter-field"><label for="${id}">${escapeHtml(label)}</label><input id="${id}" type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}" onchange="this.form.requestSubmit()"></div>`;
 }
 
 function cityCombobox(
@@ -88,7 +89,15 @@ function cityCombobox(
   const options = destinations.map((destination, index) => (
     `<button id="city-option-${index}" class="city-option" type="button" role="option" aria-selected="false" data-city-code="${escapeHtml(destination.code)}" data-city-search="${escapeHtml(`${destination.name} ${destination.code}`.toLocaleLowerCase('ru'))}">${escapeHtml(destination.name)} <span>${escapeHtml(destination.code)}</span></button>`
   ));
-  return `<div class="city-combobox" data-city-combobox><input type="search" name="q" role="combobox" aria-label="Город" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><div id="city-options" class="city-options" role="listbox" hidden>${options.join('')}</div></div>`;
+  return `<div class="filter-field"><label for="filter-city">Город</label><div class="city-combobox" data-city-combobox><input id="filter-city" type="search" name="q" role="combobox" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><div id="city-options" class="city-options" role="listbox" hidden>${options.join('')}</div></div></div>`;
+}
+
+function hasActiveFilters(query: AdminQuery): boolean {
+  return query.scope !== 'all'
+    || query.trip !== 'all'
+    || query.date.length > 0
+    || query.returnDate.length > 0
+    || query.search.length > 0;
 }
 
 function row(view: AdminTicketView): string {
@@ -147,15 +156,19 @@ const STYLES = `
   .card { background: #fff; border: 1px solid #e3e5e8; border-radius: 10px; padding: 12px 14px; }
   .card-label { font-size: 12px; color: #6b7280; }
   .card-value { font-size: 18px; font-weight: 600; margin-top: 4px; }
-  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
-  .tabs { display: flex; gap: 6px; }
-  .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; margin-bottom: 12px; }
+  .filter-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; white-space: nowrap; }
   .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-  form.search { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .filter-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
-  .date-control { display: inline-flex; align-items: center; gap: 4px; }
-  .calendar-button { padding: 6px 9px; background: #fff; color: #1a1a1a; border: 1px solid #d1d5db; }
-  .city-combobox { position: relative; min-width: 220px; }
+  form.sync { margin-left: auto; }
+  form.search { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; margin-bottom: 16px; padding: 12px 14px; background: #fff; border: 1px solid #e3e5e8; border-radius: 10px; }
+  .filter-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; }
+  .filter-actions { display: flex; gap: 8px; align-items: flex-end; }
+  .reset { display: inline-flex; align-items: center; padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151; font-size: 14px; text-decoration: none; }
+  .reset:hover { background: #f9fafb; }
+  .city-combobox { position: relative; min-width: 240px; }
   .city-combobox input { width: 100%; }
   .city-options { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow-y: auto; padding: 4px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 24px rgb(0 0 0 / 14%); }
   .city-options[hidden] { display: none; }
@@ -163,8 +176,10 @@ const STYLES = `
   .city-option[hidden] { display: none; }
   .city-option span { float: right; color: #6b7280; font-size: 12px; }
   .city-option:hover, .city-option.active { background: #eff6ff; color: #1d4ed8; }
-  input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #fff; }
-  button { padding: 6px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
+  input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; line-height: 20px; background: #fff; color: #1a1a1a; }
+  input[type=date] { min-width: 170px; }
+  input:focus-visible, .tab:focus-visible, button:focus-visible, .reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+  button { padding: 6px 14px; border: 1px solid transparent; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; line-height: 20px; cursor: pointer; }
   button.secondary { background: #10b981; }
   .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e3e5e8; }
   table { width: 100%; min-width: 720px; border-collapse: collapse; background: #fff; }
@@ -175,6 +190,12 @@ const STYLES = `
   .pagination { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
   .flash { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
   .empty { padding: 24px; text-align: center; color: #6b7280; }
+  @media (max-width: 720px) {
+    body { padding: 16px; }
+    form.sync { margin-left: 0; }
+    form.search { width: 100%; }
+    .filter-field, .city-combobox { width: 100%; min-width: 0; }
+  }
 `;
 
 export function renderAdminPage(dashboard: AdminDashboard, flash?: string): string {
@@ -208,30 +229,39 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
   ${flashHtml}
   ${statsCards(dashboard)}
   <div class="toolbar">
-    <div class="tabs">
-      ${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active)}
-      ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic)}
-      ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international)}
+    <div class="filter-group">
+      <span class="group-label">Направление</span>
+      <div class="tabs">
+        ${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active)}
+        ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic)}
+        ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international)}
+      </div>
     </div>
-    <div class="tabs">
-      ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active)}
-      ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip)}
-      ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay)}
+    <div class="filter-group">
+      <span class="group-label">Тип поездки</span>
+      <div class="tabs">
+        ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active)}
+        ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip)}
+        ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay)}
+      </div>
     </div>
-    <form method="post" action="/sync">
+    <form class="sync" method="post" action="/sync">
       <button class="secondary" type="submit">↻ Синхронизировать сейчас</button>
     </form>
-    <form class="search" method="get" action="/">
-      <input type="hidden" name="scope" value="${escapeHtml(query.scope)}">
-      <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
-      <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
-      <input type="hidden" name="dir" value="${escapeHtml(query.direction)}">
-      ${dateInput('date', 'Дата вылета', query.date)}
-      ${dateInput('rdate', 'Дата возврата', query.returnDate)}
-      ${cityCombobox(dashboard.destinations, query.search)}
-      <button type="submit">Найти</button>
-    </form>
   </div>
+  <form class="search" method="get" action="/">
+    <input type="hidden" name="scope" value="${escapeHtml(query.scope)}">
+    <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
+    <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
+    <input type="hidden" name="dir" value="${escapeHtml(query.direction)}">
+    ${dateInput('date', 'Дата вылета', query.date)}
+    ${dateInput('rdate', 'Дата возврата', query.returnDate)}
+    ${cityCombobox(dashboard.destinations, query.search)}
+    <div class="filter-actions">
+      <button type="submit">Найти</button>
+      ${hasActiveFilters(query) ? '<a class="reset" href="/">Сбросить</a>' : ''}
+    </div>
+  </form>
   <div class="table-wrap">
     <table>
       <thead><tr>${headers}</tr></thead>
@@ -240,19 +270,6 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
   </div>
   ${pagination(dashboard)}
   <script>
-    for (const button of document.querySelectorAll('[data-date-target]')) {
-      button.addEventListener('click', (event) => {
-        event.preventDefault();
-        const input = document.getElementById(button.dataset.dateTarget);
-        if (!(input instanceof HTMLInputElement)) return;
-        if (typeof input.showPicker === 'function') input.showPicker();
-        else {
-          input.focus();
-          input.click();
-        }
-      });
-    }
-
     for (const combobox of document.querySelectorAll('[data-city-combobox]')) {
       const input = combobox.querySelector('input[role="combobox"]');
       const list = combobox.querySelector('[role="listbox"]');
