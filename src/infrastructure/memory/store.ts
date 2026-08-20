@@ -237,16 +237,22 @@ export class MemoryStore implements
     return Promise.resolve({ stored: { ...stored }, previous: null });
   }
 
-  public deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number> {
+  public deactivateUnseen(
+    source: SyncSourceKey,
+    seenExternalKeys: readonly string[],
+    now: Date
+  ): Promise<number> {
+    const seen = new Set(seenExternalKeys);
     let changed = 0;
     for (const ticket of this.tickets) {
       if (
         ticket.isActive
         && ticket.originCode === source.originCode
         && ticket.currencyCode === source.currencyCode
-        && ticket.lastSeenAt < threshold
+        && !seen.has(ticket.externalKey)
       ) {
         ticket.isActive = false;
+        ticket.updatedAt = now;
         changed += 1;
       }
     }

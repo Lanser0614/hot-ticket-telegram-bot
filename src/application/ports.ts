@@ -33,7 +33,11 @@ export interface UserRepository {
 export interface TicketRepository {
   findByExternalKey(externalKey: string): Promise<StoredTicket | null>;
   upsert(ticket: Ticket, observedAt: Date): Promise<{ stored: StoredTicket; previous: StoredTicket | null }>;
-  deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number>;
+  deactivateUnseen(
+    source: SyncSourceKey,
+    seenExternalKeys: readonly string[],
+    now: Date
+  ): Promise<number>;
   listActive(query: TicketQuery): Promise<readonly StoredTicket[]>;
   listActiveDestinations(query: DestinationQuery): Promise<readonly string[]>;
   getCachedActiveDestinations(query: DestinationQuery): Promise<readonly string[] | null>;

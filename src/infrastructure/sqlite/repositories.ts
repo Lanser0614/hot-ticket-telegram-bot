@@ -324,18 +324,30 @@ export class ApplicationRepositories implements
     return { stored, previous };
   }
 
-  public async deactivateUnseenBefore(source: SyncSourceKey, threshold: Date): Promise<number> {
+  public async deactivateUnseen(
+    source: SyncSourceKey,
+    seenExternalKeys: readonly string[],
+    now: Date
+  ): Promise<number> {
+    const parameters: Record<string, unknown> = {
+      ':origin': source.originCode,
+      ':currency': source.currencyCode,
+      ':now': seconds(now)
+    };
+    const seenPlaceholders = seenExternalKeys.map((externalKey, index) => {
+      const placeholder = `:seenExternalKey${String(index)}`;
+      parameters[placeholder] = externalKey;
+      return placeholder;
+    });
+    const unseenCondition = seenPlaceholders.length === 0
+      ? ''
+      : `AND external_key NOT IN (${seenPlaceholders.join(', ')})`;
     const rows = await this.db.all(`
       UPDATE tickets SET is_active = 0, updated_at = :now
       WHERE origin_code = :origin AND currency_code = :currency
-        AND is_active = 1 AND last_seen_at < :threshold
+        AND is_active = 1 ${unseenCondition}
       RETURNING id
-    `, {
-      ':origin': source.originCode,
-      ':currency': source.currencyCode,
-      ':threshold': seconds(threshold),
-      ':now': seconds(this.clock.now())
-    });
+    `, parameters);
     return rows.length;
   }
 

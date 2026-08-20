@@ -317,16 +317,26 @@ describe('SyncTicketsService', () => {
     expect(withBaggage.notifier.sent).toHaveLength(1);
   });
 
-  it('деактивирует билет, не встречавшийся шесть часов', async () => {
+  it('сразу деактивирует билет, отсутствующий в успешном response', async () => {
     const fixture = createFixture();
     fixture.provider.tickets.set('TAS|UZS', [createTicket()]);
     await fixture.service.execute(source);
 
-    fixture.clock.advance(7 * 60 * 60 * 1_000);
     fixture.provider.tickets.set('TAS|UZS', []);
     await fixture.service.execute(source);
 
     expect(fixture.store.getTickets()[0]?.isActive).toBe(false);
+  });
+
+  it('не деактивирует сохранённый билет при ошибке provider', async () => {
+    const fixture = createFixture();
+    fixture.provider.tickets.set('TAS|UZS', [createTicket()]);
+    await fixture.service.execute(source);
+
+    fixture.provider.errors.set('TAS|UZS', new Error('provider failed'));
+    await expect(fixture.service.execute(source)).rejects.toThrow('provider failed');
+
+    expect(fixture.store.getTickets()[0]?.isActive).toBe(true);
   });
 });
 
