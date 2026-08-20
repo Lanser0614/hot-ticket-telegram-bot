@@ -32,6 +32,15 @@ function asTripClass(value: unknown): TripClass {
   throw new TypeError('База вернула некорректный класс');
 }
 
+function asStringArray(value: unknown): readonly string[] {
+  if (typeof value !== 'string') throw new TypeError('База вернула некорректный JSON');
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+    throw new TypeError('База вернула некорректный список городов');
+  }
+  return parsed;
+}
+
 function mapRecord(row: Row): AdminTicketRecord {
   return {
     id: asNumber(row.id),
@@ -71,6 +80,15 @@ export class SqliteAdminRepository implements AdminRepository {
       FROM tickets WHERE is_active = 1
     `);
     return rows.map(mapRecord);
+  }
+
+  public async listCachedDestinations(): Promise<readonly string[]> {
+    const rows = await this.db.all('SELECT destination_codes FROM destination_cache');
+    const codes = new Set<string>();
+    for (const row of rows) {
+      for (const code of asStringArray(row.destination_codes)) codes.add(code);
+    }
+    return [...codes].sort();
   }
 
   public async getStats(): Promise<AdminStatsRecord> {

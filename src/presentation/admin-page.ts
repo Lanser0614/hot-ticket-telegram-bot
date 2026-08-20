@@ -1,5 +1,6 @@
 import type {
   AdminDashboard,
+  AdminDestinationOption,
   AdminScope,
   AdminSort,
   AdminTicketView,
@@ -71,18 +72,22 @@ function tripTab(dashboard: AdminDashboard, trip: AdminTripFilter, label: string
   return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
 }
 
-function dateSelect(
+function dateInput(
   name: string,
-  placeholder: string,
-  dates: readonly string[],
+  label: string,
   selected: string
 ): string {
-  const options = [`<option value="">${escapeHtml(placeholder)}</option>`];
-  for (const date of dates) {
-    const isSelected = date === selected ? ' selected' : '';
-    options.push(`<option value="${escapeHtml(date)}"${isSelected}>${escapeHtml(date)}</option>`);
-  }
-  return `<select name="${escapeHtml(name)}">${options.join('')}</select>`;
+  return `<label class="filter-field"><span>${escapeHtml(label)}</span><input type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}"></label>`;
+}
+
+function cityCombobox(
+  destinations: readonly AdminDestinationOption[],
+  selected: string
+): string {
+  const options = destinations.map((destination) => (
+    `<option value="${escapeHtml(destination.code)}">${escapeHtml(destination.name)} (${escapeHtml(destination.code)})</option>`
+  ));
+  return `<input type="search" name="q" list="cached-destinations" aria-label="Город" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><datalist id="cached-destinations">${options.join('')}</datalist>`;
 }
 
 function row(view: AdminTicketView): string {
@@ -146,6 +151,7 @@ const STYLES = `
   .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; }
   .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
   form.search { margin-left: auto; display: flex; gap: 6px; }
+  .filter-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #6b7280; }
   input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: #fff; }
   button { padding: 6px 14px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
   button.secondary { background: #10b981; }
@@ -208,9 +214,9 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
       <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
       <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
       <input type="hidden" name="dir" value="${escapeHtml(query.direction)}">
-      ${dateSelect('date', 'Дата вылета: все', dashboard.departureDates, query.date)}
-      ${dateSelect('rdate', 'Дата возврата: все', dashboard.returnDates, query.returnDate)}
-      <input type="search" name="q" placeholder="Поиск по городу или IATA" value="${escapeHtml(query.search)}">
+      ${dateInput('date', 'Дата вылета', query.date)}
+      ${dateInput('rdate', 'Дата возврата', query.returnDate)}
+      ${cityCombobox(dashboard.destinations, query.search)}
       <button type="submit">Найти</button>
     </form>
   </div>

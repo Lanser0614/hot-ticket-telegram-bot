@@ -28,6 +28,7 @@ const records: readonly AdminTicketRecord[] = [{
 
 const repository: AdminRepository = {
   listActiveTickets: () => Promise.resolve(records),
+  listCachedDestinations: () => Promise.resolve(['IST']),
   getStats: () => Promise.resolve({ totalTickets: 1, users: 1, activeSubscriptions: 0, lastSync: null })
 };
 

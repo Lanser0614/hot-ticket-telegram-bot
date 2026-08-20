@@ -39,7 +39,13 @@ export interface AdminSyncRun {
 
 export interface AdminRepository {
   listActiveTickets(): Promise<readonly AdminTicketRecord[]>;
+  listCachedDestinations(): Promise<readonly string[]>;
   getStats(): Promise<AdminStatsRecord>;
+}
+
+export interface AdminDestinationOption {
+  readonly code: string;
+  readonly name: string;
 }
 
 export interface AdminTicketView {
@@ -83,8 +89,7 @@ export interface AdminDashboard {
     readonly roundTrip: number;
     readonly oneWay: number;
   };
-  readonly departureDates: readonly string[];
-  readonly returnDates: readonly string[];
+  readonly destinations: readonly AdminDestinationOption[];
   readonly stats: AdminStatsRecord;
 }
 
@@ -126,18 +131,20 @@ export class AdminService {
   ) {}
 
   public async getDashboard(query: AdminQuery): Promise<AdminDashboard> {
-    const [records, stats] = await Promise.all([
+    const [records, cachedDestinationCodes, stats] = await Promise.all([
       this.repository.listActiveTickets(),
+      this.repository.listCachedDestinations(),
       this.repository.getStats()
     ]);
     const views = records.map(toView);
     const domestic = views.filter((view) => view.scope === 'domestic').length;
     const roundTrip = views.filter((view) => view.roundTrip).length;
 
-    const departureDates = [...new Set(views.map((view) => view.departureDate))].sort();
-    const returnDates = [...new Set(
-      views.map((view) => view.returnDate).filter((value): value is string => value !== null)
-    )].sort();
+    const destinations = [...new Set(cachedDestinationCodes)].map((code) => ({
+      code,
+      name: getLocationName(code) ?? code
+    })).sort((left, right) => left.name.localeCompare(right.name, 'ru')
+      || left.code.localeCompare(right.code));
 
     const search = query.search.trim().toLocaleLowerCase('ru-RU');
     const date = query.date.trim();
@@ -178,8 +185,7 @@ export class AdminService {
         roundTrip,
         oneWay: views.length - roundTrip
       },
-      departureDates,
-      returnDates,
+      destinations,
       stats
     };
   }

@@ -34,6 +34,7 @@ const stats: AdminStatsRecord = {
 function fakeRepository(records: readonly AdminTicketRecord[]): AdminRepository {
   return {
     listActiveTickets: () => Promise.resolve(records),
+    listCachedDestinations: () => Promise.resolve(['IST', 'DXB', 'SKD']),
     getStats: () => Promise.resolve(stats)
   };
 }
@@ -75,12 +76,15 @@ describe('AdminService.getDashboard', () => {
     expect(oneway.rows.map((row) => row.destinationCode).sort()).toEqual(['IST', 'SKD']);
   });
 
-  it('отдаёт списки дат вылета и возврата для выпадающих списков', async () => {
+  it('отдаёт отсортированный список городов из кэша', async () => {
     const service = new AdminService(fakeRepository(sample));
     const dashboard = await service.getDashboard(query({}));
 
-    expect(dashboard.departureDates).toEqual(['2026-08-09', '2026-09-15', '2026-10-01']);
-    expect(dashboard.returnDates).toEqual(['2026-08-13']);
+    expect(dashboard.destinations).toEqual([
+      { code: 'DXB', name: 'Дубай' },
+      { code: 'SKD', name: 'Самарканд' },
+      { code: 'IST', name: 'Стамбул' }
+    ]);
   });
 
   it('фильтрует по дате возврата', async () => {

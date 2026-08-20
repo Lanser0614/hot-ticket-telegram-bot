@@ -32,8 +32,7 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
     pageCount: 1,
     pageSize: 50,
     counts: { active: 1, domestic: 0, international: 1, roundTrip: 1, oneWay: 0 },
-    departureDates: ['2026-09-15'],
-    returnDates: ['2026-09-20'],
+    destinations: [{ code: 'IST', name: 'Стамбул' }],
     stats: { totalTickets: 10, users: 4, activeSubscriptions: 2, lastSync: null },
     ...overrides
   };
@@ -65,17 +64,31 @@ describe('renderAdminPage', () => {
     expect(html).toContain('date=2026-09-15');
     expect(html).toContain('rdate=2026-09-20');
     expect(html).toContain('trip=round');
-    expect(html).toContain('<option value="2026-09-15" selected>');
-    expect(html).toContain('<option value="2026-09-20" selected>');
+    expect(html).toContain('type="date" name="date" value="2026-09-15"');
+    expect(html).toContain('type="date" name="rdate" value="2026-09-20"');
   });
 
-  it('рендерит выпадающие списки дат вылета и возврата', () => {
+  it('рендерит date picker для вылета и возврата', () => {
     const html = renderAdminPage(dashboard());
 
-    expect(html).toContain('name="date"');
-    expect(html).toContain('name="rdate"');
-    expect(html).toContain('Дата вылета: все');
-    expect(html).toContain('Дата возврата: все');
+    expect(html).toContain('type="date" name="date"');
+    expect(html).toContain('type="date" name="rdate"');
+    expect(html).toContain('Дата вылета');
+    expect(html).toContain('Дата возврата');
+  });
+
+  it('рендерит searchable список городов из кэша и сохраняет выбранный город', () => {
+    const html = renderAdminPage(dashboard({
+      query: {
+        scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city',
+        direction: 'asc', search: 'IST', page: 1
+      }
+    }));
+
+    expect(html).toContain('type="search" name="q" list="cached-destinations"');
+    expect(html).toContain('value="IST"');
+    expect(html).toContain('<datalist id="cached-destinations">');
+    expect(html).toContain('<option value="IST">Стамбул (IST)</option>');
   });
 
   it('строит ссылки сортировки с переключением направления', () => {

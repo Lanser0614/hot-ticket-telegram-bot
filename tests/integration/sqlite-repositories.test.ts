@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports.js';
 import type { Ticket } from '../../src/domain/ticket.js';
+import { SqliteAdminRepository } from '../../src/infrastructure/sqlite/admin-repository.js';
 import { openSqliteDatabase } from '../../src/infrastructure/sqlite/database.js';
 import { applyMigrations } from '../../src/infrastructure/sqlite/migrations.js';
 import { ApplicationRepositories } from '../../src/infrastructure/sqlite/repositories.js';
@@ -207,6 +208,8 @@ describe('ApplicationRepositories on SQLite', () => {
     await expect(repositories.getCachedActiveDestinations(query)).resolves.toBeNull();
     await repositories.saveActiveDestinationsCache(query, ['BHK', 'IST'], now);
     await expect(repositories.getCachedActiveDestinations(query))
+      .resolves.toEqual(['BHK', 'IST']);
+    await expect(new SqliteAdminRepository(database).listCachedDestinations())
       .resolves.toEqual(['BHK', 'IST']);
 
     await repositories.saveActiveDestinationsCache(query, ['DXB'], now);
