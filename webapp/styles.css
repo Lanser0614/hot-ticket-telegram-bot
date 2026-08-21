@@ -2,16 +2,16 @@
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
   font-synthesis: none;
-  --bg: var(--tg-theme-bg-color, #101922);
-  --surface: var(--tg-theme-section-bg-color, #1c2733);
+  --bg: #101922;
+  --surface: #1c2733;
   --surface-deep: #141f29;
   --surface-raised: #2a3846;
-  --text: var(--tg-theme-text-color, #f2f4f6);
-  --muted: var(--tg-theme-hint-color, #7d8b99);
+  --text: #f2f4f6;
+  --muted: #7d8b99;
   --muted-deep: #5c6b78;
   --soft-text: #c3ccd4;
-  --accent: var(--tg-theme-button-color, #4faaf1);
-  --accent-text: var(--tg-theme-button-text-color, #0a1622);
+  --accent: #4faaf1;
+  --accent-text: #0a1622;
   --hot: #ff8a3d;
   --success: #3ddc84;
   --danger: #ff8a8a;
@@ -149,7 +149,7 @@ h2 { font-size: 17px; font-weight: 750; }
 .choice.active { background: var(--accent); color: var(--accent-text); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
 .field { min-width: 0; }
-input { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; outline: none; background: var(--surface-deep); color: var(--text); font-size: 14px; }
+input { width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; outline: none; background: var(--surface-deep); color: var(--text); color-scheme: dark; font-size: 14px; -webkit-text-fill-color: var(--text); }
 input:focus { border-color: var(--accent); }
 input::placeholder { color: var(--muted-deep); }
 .full-input { margin-bottom: 18px; }

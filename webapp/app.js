@@ -205,6 +205,13 @@ function haptic(type = 'light') {
   telegram?.HapticFeedback?.impactOccurred(type);
 }
 
+function applyTelegramChrome() {
+  if (!telegram) return;
+  if (telegram.isVersionAtLeast?.('6.1')) telegram.setBackgroundColor?.('#101922');
+  if (telegram.isVersionAtLeast?.('6.9')) telegram.setHeaderColor?.('#101922');
+  if (telegram.isVersionAtLeast?.('7.10')) telegram.setBottomBarColor?.('#151f2b');
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.remove('hidden');
@@ -739,6 +746,7 @@ if (!demoMode && !telegram?.initData) {
   showTabs(false);
   content.innerHTML = `<section class="screen locked-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">Откройте Hot Ticket из Telegram</div><div class="state-copy">Mini App использует Telegram для безопасного входа и доступа к вашим отслеживаниям.</div></section>`;
 } else {
+  applyTelegramChrome();
   telegram?.ready();
   telegram?.expand();
   void loadCurrentView();
