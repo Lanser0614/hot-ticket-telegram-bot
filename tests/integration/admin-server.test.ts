@@ -33,12 +33,28 @@ const repository: AdminRepository = {
     totalTickets: 1,
     users: 1,
     activeSubscriptions: 0,
+    userStats: {
+      active: 1,
+      new7Days: 1,
+      new30Days: 1,
+      withActiveSubscriptions: 0,
+      recent: []
+    },
+    priceStats: {
+      currentMinPrice: 2_000_000,
+      currentAveragePrice: 2_000_000,
+      currentMaxPrice: 2_000_000,
+      trend30Days: [],
+      routes30Days: []
+    },
     clickStats: {
       clicks24Hours: 0,
       clicks7Days: 0,
       clicks30Days: 0,
       uniqueUsers30Days: 0,
-      bySource30Days: []
+      bySource30Days: [],
+      daily30Days: [],
+      topRoutes30Days: []
     },
     lastSync: null
   })
@@ -99,7 +115,7 @@ describe('admin server', () => {
     });
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain('HotTicket');
+    expect(html).toContain('Hot Ticket');
     expect(html).toContain('Стамбул');
   });
 

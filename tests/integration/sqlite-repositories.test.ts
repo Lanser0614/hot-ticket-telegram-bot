@@ -303,4 +303,116 @@ describe('ApplicationRepositories on SQLite', () => {
     });
     database.close();
   });
+
+  it('строит полную статистику админки по пользователям, ценам и кликам', async () => {
+    const { database, repositories } = createRepositories();
+    const now = new Date();
+    const user = await repositories.upsertTelegramProfile({
+      telegramUserId: 100,
+      telegramChatId: 200,
+      username: 'traveler',
+      firstName: 'Ali',
+      lastName: null,
+      languageCode: 'ru'
+    }, now);
+    const stored = (await repositories.upsert(ticket(), now)).stored;
+    await repositories.create({
+      userId: user.id,
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      currencyCode: 'UZS',
+      departureDateFrom: '2026-09-01',
+      departureDateTo: '2026-09-30',
+      maxPrice: 2_000_000,
+      directOnly: true,
+      roundTripOnly: false,
+      baggageRequired: false
+    }, now);
+    await repositories.addClick({
+      ticket: stored,
+      userId: user.id,
+      source: 'miniapp_card',
+      subscriptionId: null,
+      userAgentKind: 'human',
+      clickedAt: now
+    });
+    await repositories.addClick({
+      ticket: stored,
+      userId: user.id,
+      source: 'miniapp_card',
+      subscriptionId: null,
+      userAgentKind: 'telegram_preview',
+      clickedAt: now
+    });
+    const routeKey = createRouteKey('TAS', 'IST', 'economy');
+    await repositories.recordObservation({
+      routeKey,
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      tripClass: 'economy',
+      isDirect: true,
+      hasBaggage: false,
+      departureDate: '2026-09-15',
+      daysAhead: 25,
+      currencyCode: 'UZS',
+      price: 1_850_000,
+      observedAt: now
+    });
+    const day = now.toISOString().slice(0, 10);
+    await repositories.rebuildDailyAggregate(routeKey, day, now);
+
+    const stats = await new SqliteAdminRepository(database).getStats();
+
+    expect(stats).toMatchObject({
+      totalTickets: 1,
+      users: 1,
+      activeSubscriptions: 1,
+      userStats: {
+        active: 1,
+        new7Days: 1,
+        new30Days: 1,
+        withActiveSubscriptions: 1
+      },
+      priceStats: {
+        currentMinPrice: 1_850_000,
+        currentAveragePrice: 1_850_000,
+        currentMaxPrice: 1_850_000
+      },
+      clickStats: {
+        clicks24Hours: 1,
+        clicks7Days: 1,
+        clicks30Days: 1,
+        uniqueUsers30Days: 1,
+        bySource30Days: [{ source: 'miniapp_card', count: 1 }]
+      }
+    });
+    expect(stats.userStats.recent[0]).toMatchObject({
+      username: 'traveler',
+      activeSubscriptions: 1,
+      clicks30Days: 1
+    });
+    expect(stats.priceStats.trend30Days).toEqual([{
+      day,
+      minPrice: 1_850_000,
+      averageMinPrice: 1_850_000,
+      maxPrice: 1_850_000,
+      sampleCount: 1
+    }]);
+    expect(stats.priceStats.routes30Days[0]).toMatchObject({
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      sampleCount: 1,
+      observedDays: 1
+    });
+    expect(stats.clickStats.daily30Days).toHaveLength(30);
+    expect(stats.clickStats.daily30Days.reduce((sum, point) => sum + point.clicks, 0)).toBe(1);
+    expect(stats.clickStats.topRoutes30Days).toEqual([{
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      clicks: 1,
+      uniqueUsers: 1,
+      averagePrice: 1_850_000
+    }]);
+    database.close();
+  });
 });

@@ -28,12 +28,28 @@ const stats: AdminStatsRecord = {
   totalTickets: 42,
   users: 7,
   activeSubscriptions: 3,
+  userStats: {
+    active: 6,
+    new7Days: 2,
+    new30Days: 5,
+    withActiveSubscriptions: 3,
+    recent: []
+  },
+  priceStats: {
+    currentMinPrice: 500_000,
+    currentAveragePrice: 1_933_368,
+    currentMaxPrice: 3_300_103,
+    trend30Days: [],
+    routes30Days: []
+  },
   clickStats: {
     clicks24Hours: 2,
     clicks7Days: 9,
     clicks30Days: 21,
     uniqueUsers30Days: 7,
-    bySource30Days: [{ source: 'bot_search', count: 12 }]
+    bySource30Days: [{ source: 'bot_search', count: 12 }],
+    daily30Days: [],
+    topRoutes30Days: []
   },
   lastSync: null
 };

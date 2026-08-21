@@ -1,35 +1,52 @@
 import type {
+  AdminClickPoint,
   AdminDashboard,
   AdminDestinationOption,
+  AdminPricePoint,
   AdminQuery,
   AdminScope,
   AdminSort,
   AdminTicketView,
   AdminTripFilter
 } from '../application/admin-service.js';
+import { getLocationName } from '../domain/locations.js';
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('ru-RU').format(value);
 }
 
+function formatPrice(value: number | null): string {
+  return value === null ? '—' : `${formatNumber(value)} UZS`;
+}
+
+function formatCompact(value: number): string {
+  if (value >= 1_000_000) return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value / 1_000_000)} млн`;
+  if (value >= 1_000) return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 }).format(value / 1_000)} тыс.`;
+  return formatNumber(value);
+}
+
 function formatDateTime(value: Date | null): string {
-  if (value === null) return '—';
+  if (value === null) return 'Нет данных';
   return new Intl.DateTimeFormat('ru-RU', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
     timeZone: 'Asia/Tashkent'
   }).format(value);
+}
+
+function formatDate(value: Date): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Tashkent'
+  }).format(value);
+}
+
+function shortDay(value: string): string {
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' })
+    .format(new Date(`${value}T00:00:00Z`));
 }
 
 function queryString(basePath: string, params: Record<string, string | number>): string {
@@ -40,349 +57,220 @@ function queryString(basePath: string, params: Record<string, string | number>):
 
 function baseParams(dashboard: AdminDashboard): Record<string, string | number> {
   const { query } = dashboard;
-  return {
-    scope: query.scope,
-    trip: query.trip,
-    date: query.date,
-    rdate: query.returnDate,
-    sort: query.sort,
-    dir: query.direction,
-    q: query.search,
-    page: 1
-  };
+  return { scope: query.scope, trip: query.trip, date: query.date, rdate: query.returnDate,
+    sort: query.sort, dir: query.direction, q: query.search, page: 1 };
 }
 
-function sortLink(
-  dashboard: AdminDashboard,
-  sort: AdminSort,
-  label: string,
-  basePath: string
-): string {
+function sortLink(dashboard: AdminDashboard, sort: AdminSort, label: string, basePath: string): string {
   const { query } = dashboard;
   const active = query.sort === sort;
   const direction = active && query.direction === 'asc' ? 'desc' : 'asc';
-  const arrow = active ? (query.direction === 'asc' ? ' ▲' : ' ▼') : '';
+  const arrow = active ? (query.direction === 'asc' ? ' ↑' : ' ↓') : '';
   const href = queryString(basePath, { ...baseParams(dashboard), sort, dir: direction });
-  return `<a href="${escapeHtml(href)}">${escapeHtml(label)}${arrow}</a>`;
+  return `<a href="${escapeHtml(href)}#tickets">${escapeHtml(label)}${arrow}</a>`;
 }
 
-function scopeTab(
-  dashboard: AdminDashboard,
-  scope: AdminScope,
-  label: string,
-  count: number,
-  basePath: string
-): string {
-  const href = queryString(basePath, { ...baseParams(dashboard), scope });
-  const cls = dashboard.query.scope === scope ? 'tab active' : 'tab';
-  return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
+function scopeTab(dashboard: AdminDashboard, scope: AdminScope, label: string, count: number, basePath: string): string {
+  const href = `${queryString(basePath, { ...baseParams(dashboard), scope })}#tickets`;
+  const cls = dashboard.query.scope === scope ? 'filter-pill active' : 'filter-pill';
+  return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} <span>${formatNumber(count)}</span></a>`;
 }
 
-function tripTab(
-  dashboard: AdminDashboard,
-  trip: AdminTripFilter,
-  label: string,
-  count: number,
-  basePath: string
-): string {
-  const href = queryString(basePath, { ...baseParams(dashboard), trip });
-  const cls = dashboard.query.trip === trip ? 'tab active' : 'tab';
-  return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
+function tripTab(dashboard: AdminDashboard, trip: AdminTripFilter, label: string, count: number, basePath: string): string {
+  const href = `${queryString(basePath, { ...baseParams(dashboard), trip })}#tickets`;
+  const cls = dashboard.query.trip === trip ? 'filter-pill active' : 'filter-pill';
+  return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} <span>${formatNumber(count)}</span></a>`;
 }
 
-function dateInput(
-  name: string,
-  label: string,
-  selected: string
-): string {
+function dateInput(name: string, label: string, selected: string): string {
   const id = `filter-${name}`;
   return `<div class="filter-field"><label for="${id}">${escapeHtml(label)}</label><input id="${id}" type="date" name="${escapeHtml(name)}" value="${escapeHtml(selected)}" onchange="this.form.requestSubmit()"></div>`;
 }
 
-function cityCombobox(
-  destinations: readonly AdminDestinationOption[],
-  selected: string
-): string {
-  const options = destinations.map((destination, index) => (
-    `<button id="city-option-${index}" class="city-option" type="button" role="option" aria-selected="false" data-city-code="${escapeHtml(destination.code)}" data-city-search="${escapeHtml(`${destination.name} ${destination.code}`.toLocaleLowerCase('ru'))}">${escapeHtml(destination.name)} <span>${escapeHtml(destination.code)}</span></button>`
-  ));
-  return `<div class="filter-field"><label for="filter-city">Город</label><div class="city-combobox" data-city-combobox><input id="filter-city" type="search" name="q" role="combobox" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><div id="city-options" class="city-options" role="listbox" hidden>${options.join('')}</div></div></div>`;
+function cityCombobox(destinations: readonly AdminDestinationOption[], selected: string): string {
+  const options = destinations.map((destination, index) =>
+    `<button id="city-option-${index}" class="city-option" type="button" role="option" aria-selected="false" data-city-code="${escapeHtml(destination.code)}" data-city-search="${escapeHtml(`${destination.name} ${destination.code}`.toLocaleLowerCase('ru'))}">${escapeHtml(destination.name)} <span>${escapeHtml(destination.code)}</span></button>`);
+  return `<div class="filter-field city-field"><label for="filter-city">Город</label><div class="city-combobox" data-city-combobox><input id="filter-city" type="search" name="q" role="combobox" aria-autocomplete="list" aria-controls="city-options" aria-expanded="false" placeholder="Город или IATA" autocomplete="off" value="${escapeHtml(selected)}"><div id="city-options" class="city-options" role="listbox" hidden>${options.join('')}</div></div></div>`;
 }
 
 function hasActiveFilters(query: AdminQuery): boolean {
-  return query.scope !== 'all'
-    || query.trip !== 'all'
-    || query.date.length > 0
-    || query.returnDate.length > 0
-    || query.search.length > 0;
+  return query.scope !== 'all' || query.trip !== 'all' || query.date.length > 0
+    || query.returnDate.length > 0 || query.search.length > 0;
 }
 
-function row(view: AdminTicketView): string {
-  const cells = [
-    `${escapeHtml(view.destinationName)} <span class="muted">${escapeHtml(view.destinationCode)}</span>`,
-    view.scope === 'domestic' ? '🇺🇿 локальный' : '🌍 международный',
-    `${formatNumber(view.price)} ${escapeHtml(view.currencyCode)}`,
-    escapeHtml(view.departureDate),
-    view.roundTrip ? escapeHtml(view.returnDate ?? '') : '<span class="muted">в одну сторону</span>',
-    view.tripClass === 'business' ? 'Бизнес' : 'Эконом',
-    view.isDirect ? 'прямой' : 'с пересадкой',
-    view.hasBaggage ? 'да' : 'нет',
-    `<a href="${escapeHtml(view.ticketLink)}" target="_blank" rel="noopener noreferrer">открыть</a>`
-  ];
-  return `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`;
+function ticketRow(view: AdminTicketView): string {
+  const routeType = view.scope === 'domestic' ? 'Локальный' : 'Международный';
+  return `<tr>
+    <td><div class="primary-cell">${escapeHtml(view.destinationName)}</div><div class="secondary-cell">TAS → ${escapeHtml(view.destinationCode)}</div></td>
+    <td><span class="status-badge neutral">${routeType}</span></td>
+    <td class="numeric strong">${formatNumber(view.price)} <span class="currency">${escapeHtml(view.currencyCode)}</span></td>
+    <td>${escapeHtml(view.departureDate)}</td>
+    <td>${view.roundTrip ? escapeHtml(view.returnDate ?? '') : '<span class="secondary-cell">В одну сторону</span>'}</td>
+    <td>${view.tripClass === 'business' ? 'Бизнес' : 'Эконом'}</td>
+    <td>${view.isDirect ? '<span class="status-badge success">Прямой</span>' : 'С пересадкой'}</td>
+    <td>${view.hasBaggage ? 'Есть' : '<span class="secondary-cell">Нет</span>'}</td>
+    <td><a class="table-link" href="${escapeHtml(view.ticketLink)}" target="_blank" rel="noopener noreferrer">Открыть</a></td>
+  </tr>`;
 }
 
 function pagination(dashboard: AdminDashboard, basePath: string): string {
   if (dashboard.pageCount <= 1) return '';
   const link = (page: number, label: string): string => {
-    const href = queryString(basePath, { ...baseParams(dashboard), page });
-    return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+    const href = `${queryString(basePath, { ...baseParams(dashboard), page })}#tickets`;
+    return `<a class="page-link" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
   };
   const parts: string[] = [];
-  if (dashboard.page > 1) parts.push(link(dashboard.page - 1, '← Назад'));
-  parts.push(`<span class="muted">Стр. ${dashboard.page} из ${dashboard.pageCount}</span>`);
-  if (dashboard.page < dashboard.pageCount) parts.push(link(dashboard.page + 1, 'Вперёд →'));
-  return `<div class="pagination">${parts.join(' ')}</div>`;
+  if (dashboard.page > 1) parts.push(link(dashboard.page - 1, 'Назад'));
+  parts.push(`<span>Страница ${dashboard.page} из ${dashboard.pageCount}</span>`);
+  if (dashboard.page < dashboard.pageCount) parts.push(link(dashboard.page + 1, 'Вперёд'));
+  return `<div class="pagination">${parts.join('')}</div>`;
 }
 
-function statsCards(dashboard: AdminDashboard): string {
+function pointsPath(values: readonly number[], width: number, height: number, min: number, max: number): string {
+  const range = Math.max(1, max - min);
+  return values.map((value, index) => {
+    const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
+    const y = height - ((value - min) / range) * height;
+    return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+  }).join(' ');
+}
+
+function chartGrid(min: number, max: number, width: number, height: number): string {
+  return Array.from({ length: 4 }, (_, index) => {
+    const ratio = index / 3;
+    const y = height - ratio * height;
+    const value = Math.round(min + ratio * (max - min));
+    return `<g><line x1="0" y1="${y.toFixed(2)}" x2="${width}" y2="${y.toFixed(2)}" class="grid-line"/><text x="-12" y="${(y + 4).toFixed(2)}" text-anchor="end" class="axis-label">${escapeHtml(formatCompact(value))}</text></g>`;
+  }).join('');
+}
+
+function priceChart(points: readonly AdminPricePoint[], idPrefix: string): string {
+  if (points.length === 0) return '<div class="chart-empty"><strong>История цен ещё собирается</strong><span>График появится после первых дневных агрегатов.</span></div>';
+  const width = 760;
+  const height = 220;
+  const all = points.flatMap((point) => [point.minPrice, point.averageMinPrice]);
+  const rawMin = Math.min(...all);
+  const rawMax = Math.max(...all);
+  const padding = Math.max(1, Math.round((rawMax - rawMin) * 0.08));
+  const min = Math.max(0, rawMin - padding);
+  const max = rawMax + padding;
+  const averagePath = pointsPath(points.map((point) => point.averageMinPrice), width, height, min, max);
+  const minPath = pointsPath(points.map((point) => point.minPrice), width, height, min, max);
+  const labelIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
+  const xLabels = labelIndexes.map((index) => {
+    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    return `<text x="${x.toFixed(2)}" y="248" text-anchor="middle" class="axis-label">${escapeHtml(shortDay(points[index]?.day ?? ''))}</text>`;
+  }).join('');
+  const dots = points.map((point, index) => {
+    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    const y = height - ((point.averageMinPrice - min) / Math.max(1, max - min)) * height;
+    return `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="3" class="chart-dot"><title>${escapeHtml(point.day)}: средний минимум ${formatPrice(point.averageMinPrice)}, наблюдений ${formatNumber(point.sampleCount)}</title></circle>`;
+  }).join('');
+  const titleId = `${idPrefix}-title`;
+  const descriptionId = `${idPrefix}-description`;
+  return `<div class="chart-legend"><span><i class="legend-line primary"></i>Средняя минимальная цена</span><span><i class="legend-line comparison"></i>Самая низкая цена</span></div><div class="chart-scroll"><svg class="chart" viewBox="0 0 840 280" role="img" aria-labelledby="${escapeHtml(titleId)} ${escapeHtml(descriptionId)}"><title id="${escapeHtml(titleId)}">Динамика цен за 30 дней</title><desc id="${escapeHtml(descriptionId)}">Сравнение средней минимальной и самой низкой цены среди наблюдаемых маршрутов.</desc><g transform="translate(60 18)">${chartGrid(min, max, width, height)}<path d="${averagePath}" class="chart-line primary"/><path d="${minPath}" class="chart-line comparison"/>${dots}${xLabels}</g></svg></div>`;
+}
+
+function clickChart(points: readonly AdminClickPoint[], idPrefix: string): string {
+  const total = points.reduce((sum, point) => sum + point.clicks, 0);
+  if (total === 0) return '<div class="chart-empty"><strong>Переходов пока нет</strong><span>Данные появятся после первых кликов по билетам.</span></div>';
+  const width = 760;
+  const height = 220;
+  const max = Math.max(1, ...points.map((point) => point.clicks));
+  const slot = width / points.length;
+  const barWidth = Math.max(4, slot * 0.62);
+  const bars = points.map((point, index) => {
+    const barHeight = (point.clicks / max) * height;
+    const x = index * slot + (slot - barWidth) / 2;
+    const y = height - barHeight;
+    return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${barHeight.toFixed(2)}" rx="3" class="chart-bar"><title>${escapeHtml(point.day)}: ${formatNumber(point.clicks)} переходов, ${formatNumber(point.uniqueUsers)} пользователей</title></rect>`;
+  }).join('');
+  const labelIndexes = [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])];
+  const labels = labelIndexes.map((index) => {
+    const x = index * slot + slot / 2;
+    return `<text x="${x.toFixed(2)}" y="248" text-anchor="middle" class="axis-label">${escapeHtml(shortDay(points[index]?.day ?? ''))}</text>`;
+  }).join('');
+  const titleId = `${idPrefix}-title`;
+  const descriptionId = `${idPrefix}-description`;
+  return `<div class="chart-legend"><span><i class="legend-square"></i>Переходы по дням</span><span class="chart-total">Всего: ${formatNumber(total)}</span></div><div class="chart-scroll"><svg class="chart" viewBox="0 0 840 280" role="img" aria-labelledby="${escapeHtml(titleId)} ${escapeHtml(descriptionId)}"><title id="${escapeHtml(titleId)}">Переходы за 30 дней</title><desc id="${escapeHtml(descriptionId)}">Количество человеческих переходов по ссылкам на билеты за каждый день.</desc><g transform="translate(60 18)">${chartGrid(0, max, width, height)}${bars}${labels}</g></svg></div>`;
+}
+
+function kpiCards(dashboard: AdminDashboard): string {
   const { stats, counts } = dashboard;
+  const price = stats.priceStats;
   const clicks = stats.clickStats;
-  const sync = stats.lastSync;
-  const syncText = sync === null
-    ? 'ещё не было'
-    : `${escapeHtml(sync.status)} · ${formatDateTime(sync.finishedAt)}`;
-  const cards: Array<[string, string]> = [
-    ['Активных билетов', formatNumber(counts.active)],
-    ['Локальные / межд.', `${formatNumber(counts.domestic)} / ${formatNumber(counts.international)}`],
-    ['Всего билетов в базе', formatNumber(stats.totalTickets)],
-    ['Пользователей', formatNumber(stats.users)],
-    ['Активных подписок', formatNumber(stats.activeSubscriptions)],
-    ['Переходы: 24 ч / 7 дн.', `${formatNumber(clicks.clicks24Hours)} / ${formatNumber(clicks.clicks7Days)}`],
-    ['Переходы за 30 дней', formatNumber(clicks.clicks30Days)],
-    ['Людей с переходами за 30 дней', formatNumber(clicks.uniqueUsers30Days)],
-    ['Последняя синхронизация', syncText]
-  ];
-  return `<div class="cards">${cards
-    .map(([label, value]) => `<div class="card"><div class="card-label">${escapeHtml(label)}</div><div class="card-value">${value}</div></div>`)
-    .join('')}</div>`;
+  return `<div class="kpi-grid">
+    <article class="kpi-card"><div class="kpi-label">Пользователи</div><div class="kpi-value">${formatNumber(stats.users)}</div><div class="kpi-meta"><strong>+${formatNumber(stats.userStats.new7Days)}</strong> за 7 дней · ${formatNumber(stats.userStats.active)} активных</div></article>
+    <article class="kpi-card"><div class="kpi-label">Активные билеты</div><div class="kpi-value">${formatNumber(counts.active)}</div><div class="kpi-meta">${formatNumber(stats.totalTickets)} всего в базе</div></article>
+    <article class="kpi-card"><div class="kpi-label">Средняя цена</div><div class="kpi-value price">${price.currentAveragePrice === null ? '—' : formatCompact(price.currentAveragePrice)}</div><div class="kpi-meta">от ${formatPrice(price.currentMinPrice)}</div></article>
+    <article class="kpi-card"><div class="kpi-label">Переходы за 30 дней</div><div class="kpi-value">${formatNumber(clicks.clicks30Days)}</div><div class="kpi-meta">${formatNumber(clicks.uniqueUsers30Days)} уникальных пользователей</div></article>
+  </div>`;
 }
 
-function clickSources(dashboard: AdminDashboard): string {
-  const rows = dashboard.stats.clickStats.bySource30Days;
-  if (rows.length === 0) return '';
-  return `<div class="click-sources"><strong>Источники переходов за 30 дней:</strong> ${rows
-    .map((item) => `${escapeHtml(item.source)} — ${formatNumber(item.count)}`)
-    .join(' · ')}</div>`;
+function usersSection(dashboard: AdminDashboard): string {
+  const userStats = dashboard.stats.userStats;
+  const rows = userStats.recent.length === 0 ? '<tr><td colspan="6"><div class="empty-table">Пользователей пока нет</div></td></tr>' : userStats.recent.map((user) => {
+    const fullName = [user.firstName, user.lastName].filter((value) => value !== null && value.length > 0).join(' ') || 'Без имени';
+    const username = user.username === null ? `ID ${user.telegramUserId}` : `@${user.username}`;
+    return `<tr><td><div class="primary-cell">${escapeHtml(fullName)}</div><div class="secondary-cell">${escapeHtml(username)}</div></td><td><span class="status-badge ${user.isActive ? 'success' : 'neutral'}">${user.isActive ? 'Активен' : 'Отключён'}</span></td><td class="numeric">${formatNumber(user.activeSubscriptions)}</td><td class="numeric">${formatNumber(user.clicks30Days)}</td><td>${formatDate(user.createdAt)}</td><td class="secondary-cell">${formatNumber(user.telegramUserId)}</td></tr>`;
+  }).join('');
+  return `<section id="users" class="dashboard-section"><div class="section-heading"><div><span class="eyebrow">Аудитория</span><h2>Пользователи</h2><p>Регистрации, активность и связь с подписками.</p></div></div><div class="mini-kpi-grid"><div class="mini-kpi"><span>Новые за 7 дней</span><strong>${formatNumber(userStats.new7Days)}</strong></div><div class="mini-kpi"><span>Новые за 30 дней</span><strong>${formatNumber(userStats.new30Days)}</strong></div><div class="mini-kpi"><span>С активной подпиской</span><strong>${formatNumber(userStats.withActiveSubscriptions)}</strong></div><div class="mini-kpi"><span>Активные аккаунты</span><strong>${formatNumber(userStats.active)}</strong></div></div><div class="panel table-panel"><div class="panel-heading"><div><h3>Последние пользователи</h3><p>12 последних регистраций</p></div></div><div class="table-wrap"><table><thead><tr><th>Пользователь</th><th>Статус</th><th>Подписки</th><th>Клики, 30 дн.</th><th>Регистрация</th><th>Telegram ID</th></tr></thead><tbody>${rows}</tbody></table></div></div></section>`;
+}
+
+function pricesSection(dashboard: AdminDashboard): string {
+  const stats = dashboard.stats.priceStats;
+  const rows = stats.routes30Days.length === 0 ? '<tr><td colspan="7"><div class="empty-table">Статистика маршрутов ещё собирается</div></td></tr>' : stats.routes30Days.map((route) => `<tr><td><div class="primary-cell">${escapeHtml(getLocationName(route.destinationCode) ?? route.destinationCode)}</div><div class="secondary-cell">${escapeHtml(route.originCode)} → ${escapeHtml(route.destinationCode)}</div></td><td>${route.tripClass === 'business' ? 'Бизнес' : 'Эконом'}</td><td class="numeric strong">${formatNumber(route.minPrice)}</td><td class="numeric">${formatNumber(route.averagePrice)}</td><td class="numeric">${formatNumber(route.maxPrice)}</td><td class="numeric">${formatNumber(route.sampleCount)}</td><td class="numeric">${formatNumber(route.observedDays)}</td></tr>`).join('');
+  return `<section id="prices" class="dashboard-section"><div class="section-heading"><div><span class="eyebrow">Рынок</span><h2>Цены билетов</h2><p>Дневные агрегаты по наблюдаемым маршрутам за последние 30 дней.</p></div><div class="metric-range"><span>Текущий диапазон</span><strong>${formatPrice(stats.currentMinPrice)} — ${formatPrice(stats.currentMaxPrice)}</strong></div></div><div class="panel chart-panel"><div class="panel-heading"><div><h3>Тенденция минимальных цен</h3><p>Агрегация по маршрутам, валюта UZS</p></div><span class="period-chip">30 дней</span></div>${priceChart(stats.trend30Days, 'prices-trend-chart')}</div><div class="panel table-panel"><div class="panel-heading"><div><h3>Маршруты по объёму наблюдений</h3><p>Цена и покрытие исторических данных</p></div></div><div class="table-wrap"><table><thead><tr><th>Маршрут</th><th>Класс</th><th>Минимум</th><th>Средняя</th><th>Максимум</th><th>Наблюдения</th><th>Дни</th></tr></thead><tbody>${rows}</tbody></table></div></div></section>`;
+}
+
+const SOURCE_LABELS: Readonly<Record<string, string>> = { bot_search: 'Поиск в боте', bot_notification: 'Уведомления бота', miniapp_deals: 'Hot Deals', miniapp_card: 'Карточка Mini App', miniapp_watchlist: 'Watchlist' };
+
+function clicksSection(dashboard: AdminDashboard): string {
+  const clicks = dashboard.stats.clickStats;
+  const maxSource = Math.max(1, ...clicks.bySource30Days.map((item) => item.count));
+  const sources = clicks.bySource30Days.length === 0 ? '<div class="chart-empty compact"><strong>Источников пока нет</strong><span>Переходы появятся после первых кликов.</span></div>' : clicks.bySource30Days.map((item) => `<div class="source-row"><div class="source-label"><span>${escapeHtml(SOURCE_LABELS[item.source] ?? item.source)}</span><strong>${formatNumber(item.count)}</strong></div><div class="source-track"><span style="width:${Math.max(3, Math.round(item.count / maxSource * 100))}%"></span></div></div>`).join('');
+  const routes = clicks.topRoutes30Days.length === 0 ? '<tr><td colspan="5"><div class="empty-table">Переходов по маршрутам пока нет</div></td></tr>' : clicks.topRoutes30Days.map((route) => `<tr><td><div class="primary-cell">${escapeHtml(getLocationName(route.destinationCode) ?? route.destinationCode)}</div><div class="secondary-cell">${escapeHtml(route.originCode)} → ${escapeHtml(route.destinationCode)}</div></td><td class="numeric strong">${formatNumber(route.clicks)}</td><td class="numeric">${formatNumber(route.uniqueUsers)}</td><td class="numeric">${formatNumber(route.averagePrice)} UZS</td><td><span class="status-badge neutral">${route.clicks === 0 ? '0%' : `${formatNumber(Math.round(route.uniqueUsers / route.clicks * 100))}%`}</span></td></tr>`).join('');
+  return `<section id="clicks" class="dashboard-section"><div class="section-heading"><div><span class="eyebrow">Конверсия</span><h2>Переходы по билетам</h2><p>Только реальные пользовательские клики; preview и bot-трафик исключены.</p></div></div><div class="mini-kpi-grid"><div class="mini-kpi"><span>За 24 часа</span><strong>${formatNumber(clicks.clicks24Hours)}</strong></div><div class="mini-kpi"><span>За 7 дней</span><strong>${formatNumber(clicks.clicks7Days)}</strong></div><div class="mini-kpi"><span>За 30 дней</span><strong>${formatNumber(clicks.clicks30Days)}</strong></div><div class="mini-kpi"><span>Уникальные пользователи</span><strong>${formatNumber(clicks.uniqueUsers30Days)}</strong></div></div><div class="two-column"><div class="panel chart-panel"><div class="panel-heading"><div><h3>Динамика переходов</h3><p>Последние 30 календарных дней</p></div></div>${clickChart(clicks.daily30Days, 'clicks-daily-chart')}</div><div class="panel source-panel"><div class="panel-heading"><div><h3>Источники</h3><p>Распределение кликов за 30 дней</p></div></div><div class="source-list">${sources}</div></div></div><div class="panel table-panel"><div class="panel-heading"><div><h3>Популярные маршруты</h3><p>По количеству переходов за 30 дней</p></div></div><div class="table-wrap"><table><thead><tr><th>Маршрут</th><th>Клики</th><th>Пользователи</th><th>Средняя цена клика</th><th>Доля уникальных</th></tr></thead><tbody>${routes}</tbody></table></div></div></section>`;
+}
+
+function ticketsSection(dashboard: AdminDashboard, basePath: string): string {
+  const { query } = dashboard;
+  const headers = [`<th>${sortLink(dashboard, 'city', 'Город', basePath)}</th>`, '<th>Тип</th>', `<th>${sortLink(dashboard, 'price', 'Цена', basePath)}</th>`, `<th>${sortLink(dashboard, 'date', 'Вылет', basePath)}</th>`, '<th>Обратно</th>', '<th>Класс</th>', '<th>Рейс</th>', '<th>Багаж</th>', '<th>Ссылка</th>'].join('');
+  const body = dashboard.rows.length === 0 ? '<tr><td colspan="9"><div class="empty-table">Билеты не найдены</div></td></tr>' : dashboard.rows.map(ticketRow).join('');
+  return `<section id="tickets" class="dashboard-section"><div class="section-heading"><div><span class="eyebrow">Каталог</span><h2>Билеты</h2><p>${formatNumber(dashboard.total)} результатов после фильтрации.</p></div></div><div class="panel filters-panel"><div class="filter-groups"><div class="filter-group"><span class="group-label">Направление</span><div class="filter-pills">${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active, basePath)}${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic, basePath)}${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international, basePath)}</div></div><div class="filter-group"><span class="group-label">Тип поездки</span><div class="filter-pills">${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active, basePath)}${tripTab(dashboard, 'round', 'Туда-обратно', dashboard.counts.roundTrip, basePath)}${tripTab(dashboard, 'oneway', 'В одну сторону', dashboard.counts.oneWay, basePath)}</div></div></div><form class="search-form" method="get" action="${escapeHtml(basePath)}/#tickets"><input type="hidden" name="scope" value="${escapeHtml(query.scope)}"><input type="hidden" name="trip" value="${escapeHtml(query.trip)}"><input type="hidden" name="sort" value="${escapeHtml(query.sort)}"><input type="hidden" name="dir" value="${escapeHtml(query.direction)}">${dateInput('date', 'Дата вылета', query.date)}${dateInput('rdate', 'Дата возврата', query.returnDate)}${cityCombobox(dashboard.destinations, query.search)}<div class="filter-actions"><button type="submit">Применить</button>${hasActiveFilters(query) ? `<a class="button ghost" href="${escapeHtml(basePath)}/#tickets">Сбросить</a>` : ''}</div></form></div><div class="panel table-panel"><div class="table-wrap"><table class="tickets-table"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody></table></div></div>${pagination(dashboard, basePath)}</section>`;
 }
 
 const STYLES = `
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 24px; background: #f5f6f8; color: #1a1a1a; }
-  h1 { font-size: 20px; margin: 0 0 16px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .card { background: #fff; border: 1px solid #e3e5e8; border-radius: 10px; padding: 12px 14px; }
-  .card-label { font-size: 12px; color: #6b7280; }
-  .card-value { font-size: 18px; font-weight: 600; margin-top: 4px; }
-  .toolbar { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; margin-bottom: 12px; }
-  .filter-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; }
-  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-  .tab { padding: 6px 12px; border-radius: 8px; background: #fff; border: 1px solid #e3e5e8; text-decoration: none; color: #1a1a1a; font-size: 14px; white-space: nowrap; }
-  .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-  form.sync { margin-left: auto; }
-  form.search { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end; margin-bottom: 16px; padding: 12px 14px; background: #fff; border: 1px solid #e3e5e8; border-radius: 10px; }
-  .filter-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6b7280; }
-  .filter-actions { display: flex; gap: 8px; align-items: flex-end; }
-  .reset { display: inline-flex; align-items: center; padding: 6px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151; font-size: 14px; text-decoration: none; }
-  .reset:hover { background: #f9fafb; }
-  .city-combobox { position: relative; min-width: 240px; }
-  .city-combobox input { width: 100%; }
-  .city-options { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow-y: auto; padding: 4px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 10px 24px rgb(0 0 0 / 14%); }
-  .city-options[hidden] { display: none; }
-  .city-option { display: block; width: 100%; padding: 8px 10px; border-radius: 6px; background: transparent; color: #1a1a1a; text-align: left; }
-  .city-option[hidden] { display: none; }
-  .city-option span { float: right; color: #6b7280; font-size: 12px; }
-  .city-option:hover, .city-option.active { background: #eff6ff; color: #1d4ed8; }
-  input[type=search], input[type=date], select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; line-height: 20px; background: #fff; color: #1a1a1a; }
-  input[type=date] { min-width: 170px; }
-  input:focus-visible, .tab:focus-visible, button:focus-visible, .reset:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
-  button { padding: 6px 14px; border: 1px solid transparent; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; line-height: 20px; cursor: pointer; }
-  button.secondary { background: #10b981; }
-  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e3e5e8; }
-  table { width: 100%; min-width: 720px; border-collapse: collapse; background: #fff; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef0f2; font-size: 14px; }
-  th { background: #fafbfc; font-weight: 600; }
-  th a { color: #1a1a1a; text-decoration: none; }
-  .muted { color: #9ca3af; font-size: 12px; }
-  .pagination { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
-  .flash { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
-  .click-sources { margin: -8px 0 20px; padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid #e3e5e8; color: #4b5563; font-size: 13px; }
-  .empty { padding: 24px; text-align: center; color: #6b7280; }
-  @media (max-width: 720px) {
-    body { padding: 16px; }
-    form.sync { margin-left: 0; }
-    form.search { width: 100%; }
-    .filter-field, .city-combobox { width: 100%; min-width: 0; }
-  }
+  :root{color-scheme:light;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--navy:#101923;--navy-2:#192532;--canvas:#f3f6fa;--panel:#fff;--text:#17202b;--muted:#6b7785;--line:#e4e9ef;--blue:#2f80ed;--blue-soft:#eaf3ff;--orange:#ef8d42;--green:#1f9d70;--green-soft:#e8f7f1}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--canvas);color:var(--text);-webkit-font-smoothing:antialiased}a{color:inherit}button,input{font:inherit}.admin-shell{min-height:100vh;display:grid;grid-template-columns:248px minmax(0,1fr)}.sidebar{position:sticky;top:0;height:100vh;padding:24px 18px;background:var(--navy);color:#dbe4ed;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:12px;padding:0 8px 28px}.brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:var(--blue);color:#fff;font-size:13px;font-weight:850;letter-spacing:.04em}.brand-name{font-size:16px;font-weight:760}.brand-subtitle{margin-top:2px;color:#8292a2;font-size:11px}.sidebar-label{padding:0 10px 8px;color:#66788a;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.side-nav{display:grid;gap:5px}.side-link{display:flex;align-items:center;gap:11px;min-height:42px;padding:10px 12px;border-radius:10px;color:#9eacba;text-decoration:none;font-size:13px;font-weight:650}.side-link:hover,.side-link.active{background:var(--navy-2);color:#fff}.nav-dot{width:8px;height:8px;border:2px solid currentColor;border-radius:50%}.side-link.active .nav-dot{border-color:var(--blue);background:var(--blue)}.sidebar-status{margin-top:auto;padding:15px;border:1px solid #263545;border-radius:12px;background:#141f2a}.status-title{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700}.live-dot{width:7px;height:7px;border-radius:50%;background:#35ca8f;box-shadow:0 0 0 3px rgb(53 202 143 / 12%)}.status-copy{margin-top:7px;color:#7f90a1;font-size:11px;line-height:1.5}.main{min-width:0;padding:28px 32px 64px}.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}h1,h2,h3,p{margin:0}h1{font-size:27px;line-height:1.15;letter-spacing:-.03em}h2{font-size:22px;letter-spacing:-.02em}h3{font-size:15px}.topbar p,.section-heading p,.panel-heading p{margin-top:5px;color:var(--muted);font-size:12px;line-height:1.45}.topbar-actions{display:flex;align-items:center;gap:9px;flex:0 0 auto}.button,button{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:9px 14px;border:1px solid transparent;border-radius:9px;background:var(--blue);color:#fff;text-decoration:none;font-size:12px;font-weight:750;cursor:pointer}.button.ghost{border-color:var(--line);background:#fff;color:#465462}.button:hover,button:hover{filter:brightness(.97)}.sync-form{margin:0}.dashboard-section{scroll-margin-top:20px;margin-bottom:54px}.section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:17px}.eyebrow{display:block;margin-bottom:6px;color:var(--blue);font-size:10px;font-weight:850;letter-spacing:.12em;text-transform:uppercase}.kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:14px}.kpi-card,.mini-kpi,.panel,.sync-strip{border:1px solid var(--line);background:var(--panel);box-shadow:0 1px 2px rgb(16 25 35 / 3%)}.kpi-card{min-height:135px;padding:19px;border-radius:14px}.kpi-label{color:var(--muted);font-size:11px;font-weight:700}.kpi-value{margin-top:14px;font-size:29px;font-weight:790;letter-spacing:-.035em}.kpi-value.price{color:var(--orange)}.kpi-meta{margin-top:10px;color:var(--muted);font-size:11px;line-height:1.4}.kpi-meta strong{color:var(--green)}.sync-strip{display:grid;grid-template-columns:1fr repeat(3,auto);align-items:center;gap:28px;padding:13px 17px;border-radius:12px;margin-bottom:14px}.sync-main{display:flex;align-items:center;gap:10px;min-width:0}.sync-copy strong{display:block;font-size:12px}.sync-copy span,.sync-metric span{display:block;margin-top:2px;color:var(--muted);font-size:10px}.sync-metric{text-align:right}.sync-metric strong{font-size:13px}.two-column{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.85fr);gap:14px}.panel{min-width:0;border-radius:14px}.chart-panel,.source-panel{padding:18px}.panel-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:16px}.period-chip{padding:5px 9px;border-radius:999px;background:var(--blue-soft);color:var(--blue);font-size:10px;font-weight:750;white-space:nowrap}.chart-legend{min-height:24px;display:flex;align-items:center;flex-wrap:wrap;gap:14px;color:var(--muted);font-size:10px}.chart-legend span{display:inline-flex;align-items:center;gap:6px}.chart-total{margin-left:auto;font-weight:700}.legend-line{width:18px;height:3px;border-radius:2px;background:var(--blue)}.legend-line.comparison{background:var(--orange)}.legend-square{width:8px;height:8px;border-radius:2px;background:var(--blue)}.chart-scroll{width:100%;overflow:hidden}.chart{display:block;width:100%;min-width:520px;height:auto}.grid-line{stroke:#e9edf2;stroke-width:1}.axis-label{fill:#8995a1;font-size:10px}.chart-line{fill:none;stroke:var(--blue);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.chart-line.comparison{stroke:var(--orange);stroke-width:2}.chart-dot{fill:#fff;stroke:var(--blue);stroke-width:2}.chart-bar{fill:var(--blue)}.chart-empty{min-height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:var(--muted);text-align:center}.chart-empty strong{color:var(--text);font-size:13px}.chart-empty span{max-width:280px;font-size:11px;line-height:1.45}.chart-empty.compact{min-height:180px}.mini-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}.mini-kpi{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:66px;padding:14px 16px;border-radius:12px}.mini-kpi span{color:var(--muted);font-size:11px}.mini-kpi strong{font-size:19px}.table-panel{overflow:hidden}.table-panel>.panel-heading{padding:17px 18px 0}.table-wrap{overflow-x:auto}table{width:100%;min-width:760px;border-collapse:collapse}th,td{padding:12px 14px;border-bottom:1px solid #edf0f4;text-align:left;font-size:11px;white-space:nowrap}th{background:#f8fafc;color:#71808e;font-size:9px;font-weight:800;letter-spacing:.055em;text-transform:uppercase}th a{text-decoration:none}tr:last-child td{border-bottom:0}tbody tr:hover{background:#fbfcfe}.primary-cell{color:var(--text);font-size:12px;font-weight:700}.secondary-cell{margin-top:3px;color:#8a96a2;font-size:10px}.numeric{text-align:right;font-variant-numeric:tabular-nums}.strong{font-weight:750}.currency{color:var(--muted);font-size:9px}.status-badge{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:9px;font-weight:750}.status-badge.success{background:var(--green-soft);color:var(--green)}.status-badge.neutral{background:#eef2f6;color:#627180}.table-link{color:var(--blue);font-weight:700;text-decoration:none}.empty-table{padding:28px;color:var(--muted);text-align:center}.metric-range{text-align:right}.metric-range span{display:block;color:var(--muted);font-size:10px}.metric-range strong{display:block;margin-top:5px;font-size:12px}.source-list{display:grid;gap:16px;padding-top:4px}.source-label{display:flex;justify-content:space-between;gap:12px;margin-bottom:7px;font-size:11px}.source-track{height:6px;overflow:hidden;border-radius:999px;background:#edf1f5}.source-track span{display:block;height:100%;border-radius:inherit;background:var(--blue)}.filters-panel{padding:16px;margin-bottom:14px}.filter-groups{display:flex;flex-wrap:wrap;gap:18px 28px;margin-bottom:15px}.filter-group{display:grid;gap:7px}.group-label,.filter-field label{color:#778490;font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}.filter-pills{display:flex;flex-wrap:wrap;gap:6px}.filter-pill{display:inline-flex;align-items:center;gap:6px;min-height:31px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#53616f;font-size:10px;font-weight:700;text-decoration:none}.filter-pill span{color:#94a0ab}.filter-pill.active{border-color:var(--blue);background:var(--blue);color:#fff}.filter-pill.active span{color:#dcecff}.search-form{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;padding-top:14px;border-top:1px solid var(--line)}.filter-field{display:grid;gap:6px}.city-field{min-width:230px;flex:1}input[type=search],input[type=date]{min-height:36px;padding:8px 10px;border:1px solid #d8dfe6;border-radius:8px;outline:none;background:#fff;color:var(--text);font-size:11px}input[type=date]{min-width:150px}input:focus-visible,a:focus-visible,button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.city-combobox{position:relative}.city-combobox input{width:100%}.city-options{position:absolute;z-index:30;top:calc(100% + 5px);right:0;left:0;max-height:260px;overflow:auto;padding:5px;border:1px solid #d8dfe6;border-radius:9px;background:#fff;box-shadow:0 16px 36px rgb(16 25 35 / 16%)}.city-options[hidden],.city-option[hidden]{display:none}.city-option{display:block;width:100%;padding:8px 9px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left}.city-option span{float:right;color:var(--muted)}.city-option:hover,.city-option.active{background:var(--blue-soft);color:#1d67c8}.filter-actions{display:flex;gap:7px}.pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:13px;color:var(--muted);font-size:11px}.page-link{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text);text-decoration:none}.flash{margin-bottom:18px;padding:11px 14px;border:1px solid #aee6ce;border-radius:10px;background:var(--green-soft);color:#176d50;font-size:12px}@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two-column{grid-template-columns:1fr}}@media(max-width:900px){.admin-shell{display:block}.sidebar{position:sticky;z-index:50;top:0;width:100%;height:auto;padding:10px 14px;display:block}.brand{display:none}.sidebar-label,.sidebar-status{display:none}.side-nav{display:flex;gap:4px;overflow-x:auto}.side-link{flex:0 0 auto;min-height:36px;padding:8px 10px;font-size:11px}.nav-dot{display:none}.main{padding:22px 18px 50px}.dashboard-section{scroll-margin-top:64px}}@media(max-width:640px){.topbar{align-items:flex-start}.topbar-actions{flex-direction:column;align-items:stretch}h1{font-size:23px}.kpi-grid,.mini-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi-card{min-height:118px;padding:16px}.kpi-value{font-size:24px}.sync-strip{grid-template-columns:1fr 1fr;gap:14px}.sync-main{grid-column:1/-1}.section-heading{align-items:flex-start;flex-direction:column}.metric-range{text-align:left}.chart-scroll{overflow-x:auto}.search-form,.filter-field,.city-field{width:100%;min-width:0}input[type=search],input[type=date]{width:100%}.filter-actions{width:100%}.filter-actions>*{flex:1}}
 `;
 
-export function renderAdminPage(
-  dashboard: AdminDashboard,
-  flash?: string,
-  basePath = '/admin'
-): string {
-  const { query } = dashboard;
-  const headers = [
-    `<th>${sortLink(dashboard, 'city', 'Город', basePath)}</th>`,
-    '<th>Тип</th>',
-    `<th>${sortLink(dashboard, 'price', 'Цена', basePath)}</th>`,
-    `<th>${sortLink(dashboard, 'date', 'Вылет', basePath)}</th>`,
-    '<th>Обратно</th>',
-    '<th>Класс</th>',
-    '<th>Рейс</th>',
-    '<th>Багаж</th>',
-    '<th>Ссылка</th>'
-  ].join('');
-  const body = dashboard.rows.length === 0
-    ? `<tr><td colspan="9"><div class="empty">Билеты не найдены</div></td></tr>`
-    : dashboard.rows.map(row).join('');
-  const flashHtml = flash === undefined ? '' : `<div class="flash">${escapeHtml(flash)}</div>`;
+const SCRIPT = `
+  for (const combobox of document.querySelectorAll('[data-city-combobox]')) {
+    const input = combobox.querySelector('input[role="combobox"]');
+    const list = combobox.querySelector('[role="listbox"]');
+    const options = Array.from(combobox.querySelectorAll('[data-city-code]'));
+    if (!(input instanceof HTMLInputElement) || !(list instanceof HTMLElement)) continue;
+    let activeOption = null;
+    const visibleOptions = () => options.filter((option) => !option.hidden);
+    const setActiveOption = (option) => { for (const item of options) { const active = item === option; item.classList.toggle('active', active); item.setAttribute('aria-selected', String(active)); } activeOption = option; if (option === null) input.removeAttribute('aria-activedescendant'); else { input.setAttribute('aria-activedescendant', option.id); option.scrollIntoView({ block:'nearest' }); } };
+    const closeOptions = () => { list.hidden = true; input.setAttribute('aria-expanded','false'); setActiveOption(null); };
+    const showOptions = (search) => { const needle = search.trim().toLocaleLowerCase('ru'); for (const option of options) option.hidden = needle !== '' && !option.dataset.citySearch.includes(needle); list.hidden = visibleOptions().length === 0; input.setAttribute('aria-expanded', String(!list.hidden)); setActiveOption(null); };
+    const selectOption = (option) => { input.value = option.dataset.cityCode ?? ''; closeOptions(); input.form?.requestSubmit(); };
+    input.addEventListener('focus', () => showOptions('')); input.addEventListener('click', () => { if (list.hidden) showOptions(''); }); input.addEventListener('input', () => showOptions(input.value));
+    input.addEventListener('keydown', (event) => { if (event.key === 'Escape') { closeOptions(); return; } if (!['ArrowDown','ArrowUp','Enter'].includes(event.key)) return; const visible = visibleOptions(); if (visible.length === 0) return; if (event.key === 'Enter') { if (list.hidden) return; event.preventDefault(); selectOption(activeOption ?? visible[0]); return; } event.preventDefault(); if (list.hidden) showOptions(input.value); const currentIndex = visible.indexOf(activeOption); const nextIndex = event.key === 'ArrowDown' ? (currentIndex + 1) % visible.length : (currentIndex <= 0 ? visible.length - 1 : currentIndex - 1); setActiveOption(visible[nextIndex]); });
+    for (const option of options) { option.addEventListener('mousedown', (event) => event.preventDefault()); option.addEventListener('click', () => selectOption(option)); }
+    document.addEventListener('click', (event) => { if (!combobox.contains(event.target)) closeOptions(); });
+  }
+  const links = Array.from(document.querySelectorAll('.side-link'));
+  const sections = links.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+  const observer = new IntersectionObserver((entries) => { const visible = entries.filter((entry) => entry.isIntersecting).sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0]; if (!visible) return; for (const link of links) link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id); }, { rootMargin:'-20% 0px -65% 0px', threshold:[0,.2,.5] });
+  for (const section of sections) observer.observe(section);
+`;
 
-  return `<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HotTicket — админ-панель</title>
-  <style>${STYLES}</style>
-</head>
-<body>
-  <h1>✈️ HotTicket — админ-панель</h1>
-  ${flashHtml}
-  ${statsCards(dashboard)}
-  ${clickSources(dashboard)}
-  <div class="toolbar">
-    <div class="filter-group">
-      <span class="group-label">Направление</span>
-      <div class="tabs">
-        ${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active, basePath)}
-        ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic, basePath)}
-        ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international, basePath)}
-      </div>
-    </div>
-    <div class="filter-group">
-      <span class="group-label">Тип поездки</span>
-      <div class="tabs">
-        ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active, basePath)}
-        ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip, basePath)}
-        ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay, basePath)}
-      </div>
-    </div>
-    <form class="sync" method="post" action="${escapeHtml(basePath)}/sync">
-      <button class="secondary" type="submit">↻ Синхронизировать сейчас</button>
-    </form>
-  </div>
-  <form class="search" method="get" action="${escapeHtml(basePath)}/">
-    <input type="hidden" name="scope" value="${escapeHtml(query.scope)}">
-    <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
-    <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
-    <input type="hidden" name="dir" value="${escapeHtml(query.direction)}">
-    ${dateInput('date', 'Дата вылета', query.date)}
-    ${dateInput('rdate', 'Дата возврата', query.returnDate)}
-    ${cityCombobox(dashboard.destinations, query.search)}
-    <div class="filter-actions">
-      <button type="submit">Найти</button>
-      ${hasActiveFilters(query) ? `<a class="reset" href="${escapeHtml(basePath)}/">Сбросить</a>` : ''}
-    </div>
-  </form>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>${headers}</tr></thead>
-      <tbody>${body}</tbody>
-    </table>
-  </div>
-  ${pagination(dashboard, basePath)}
-  <script>
-    for (const combobox of document.querySelectorAll('[data-city-combobox]')) {
-      const input = combobox.querySelector('input[role="combobox"]');
-      const list = combobox.querySelector('[role="listbox"]');
-      const options = Array.from(combobox.querySelectorAll('[data-city-code]'));
-      if (!(input instanceof HTMLInputElement) || !(list instanceof HTMLElement)) continue;
-
-      let activeOption = null;
-      const visibleOptions = () => options.filter((option) => !option.hidden);
-      const setActiveOption = (option) => {
-        for (const item of options) {
-          const active = item === option;
-          item.classList.toggle('active', active);
-          item.setAttribute('aria-selected', String(active));
-        }
-        activeOption = option;
-        if (option === null) input.removeAttribute('aria-activedescendant');
-        else {
-          input.setAttribute('aria-activedescendant', option.id);
-          option.scrollIntoView({ block: 'nearest' });
-        }
-      };
-      const closeOptions = () => {
-        list.hidden = true;
-        input.setAttribute('aria-expanded', 'false');
-        setActiveOption(null);
-      };
-      const showOptions = (search) => {
-        const needle = search.trim().toLocaleLowerCase('ru');
-        for (const option of options) {
-          option.hidden = needle !== '' && !option.dataset.citySearch.includes(needle);
-        }
-        list.hidden = visibleOptions().length === 0;
-        input.setAttribute('aria-expanded', String(!list.hidden));
-        setActiveOption(null);
-      };
-      const selectOption = (option) => {
-        input.value = option.dataset.cityCode ?? '';
-        closeOptions();
-        input.form?.requestSubmit();
-      };
-
-      input.addEventListener('focus', () => showOptions(''));
-      input.addEventListener('click', () => {
-        if (list.hidden) showOptions('');
-      });
-      input.addEventListener('input', () => showOptions(input.value));
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-          closeOptions();
-          return;
-        }
-        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
-        const visible = visibleOptions();
-        if (visible.length === 0) return;
-        if (event.key === 'Enter') {
-          if (list.hidden) return;
-          event.preventDefault();
-          selectOption(activeOption ?? visible[0]);
-          return;
-        }
-        event.preventDefault();
-        if (list.hidden) showOptions(input.value);
-        const currentIndex = visible.indexOf(activeOption);
-        const nextIndex = event.key === 'ArrowDown'
-          ? (currentIndex + 1) % visible.length
-          : (currentIndex <= 0 ? visible.length - 1 : currentIndex - 1);
-        setActiveOption(visible[nextIndex]);
-      });
-
-      for (const option of options) {
-        option.addEventListener('mousedown', (event) => event.preventDefault());
-        option.addEventListener('click', () => selectOption(option));
-      }
-      document.addEventListener('click', (event) => {
-        if (!combobox.contains(event.target)) closeOptions();
-      });
-    }
-  </script>
-</body>
-</html>`;
+export function renderAdminPage(dashboard: AdminDashboard, flash?: string, basePath = '/admin'): string {
+  const { stats } = dashboard;
+  const sync = stats.lastSync;
+  const flashHtml = flash === undefined ? '' : `<div class="flash" role="status">${escapeHtml(flash)}</div>`;
+  const syncState = sync === null ? 'Нет синхронизаций' : `Последняя синхронизация: ${formatDateTime(sync.finishedAt)}`;
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Hot Ticket — управление</title><style>${STYLES}</style></head><body><div class="admin-shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">HT</div><div><div class="brand-name">Hot Ticket</div><div class="brand-subtitle">Control center</div></div></div><div class="sidebar-label">Навигация</div><nav class="side-nav" aria-label="Разделы админ-панели"><a class="side-link active" href="#overview"><span class="nav-dot"></span>Обзор</a><a class="side-link" href="#users"><span class="nav-dot"></span>Пользователи</a><a class="side-link" href="#prices"><span class="nav-dot"></span>Цены</a><a class="side-link" href="#clicks"><span class="nav-dot"></span>Переходы</a><a class="side-link" href="#tickets"><span class="nav-dot"></span>Билеты</a></nav><div class="sidebar-status"><div class="status-title"><span class="live-dot"></span>Система работает</div><div class="status-copy">${escapeHtml(syncState)}</div></div></aside><main class="main"><header class="topbar"><div><h1>Панель управления</h1><p>Пользователи, цены, переходы и каталог билетов в одном месте.</p></div><div class="topbar-actions"><a class="button ghost" href="${escapeHtml(basePath)}/">Обновить данные</a><form class="sync-form" method="post" action="${escapeHtml(basePath)}/sync"><button type="submit">Запустить sync</button></form></div></header>${flashHtml}<section id="overview" class="dashboard-section"><div class="section-heading"><div><span class="eyebrow">Сводка</span><h2>Состояние продукта</h2><p>Первый экран показывает основные показатели без дополнительной фильтрации.</p></div><span class="period-chip">Последние 30 дней</span></div>${kpiCards(dashboard)}<div class="sync-strip"><div class="sync-main"><span class="live-dot"></span><div class="sync-copy"><strong>${escapeHtml(syncState)}</strong><span>${sync === null ? 'Запустите sync для первой загрузки' : `Статус: ${escapeHtml(sync.status)}`}</span></div></div><div class="sync-metric"><strong>${formatNumber(stats.activeSubscriptions)}</strong><span>активных подписок</span></div><div class="sync-metric"><strong>${sync === null ? '—' : formatNumber(sync.fetchedCount)}</strong><span>получено</span></div><div class="sync-metric"><strong>${sync === null ? '—' : formatNumber(sync.insertedCount + sync.updatedCount)}</strong><span>изменено</span></div></div><div class="two-column"><div class="panel chart-panel"><div class="panel-heading"><div><h3>Цены билетов</h3><p>Средняя минимальная цена по маршрутам</p></div><a class="table-link" href="#prices">Подробнее</a></div>${priceChart(stats.priceStats.trend30Days, 'overview-price-chart')}</div><div class="panel chart-panel"><div class="panel-heading"><div><h3>Переходы</h3><p>Человеческие клики по дням</p></div><a class="table-link" href="#clicks">Подробнее</a></div>${clickChart(stats.clickStats.daily30Days, 'overview-click-chart')}</div></div></section>${usersSection(dashboard)}${pricesSection(dashboard)}${clicksSection(dashboard)}${ticketsSection(dashboard, basePath)}</main></div><script>${SCRIPT}</script></body></html>`;
 }

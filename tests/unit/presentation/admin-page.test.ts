@@ -37,12 +37,51 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
       totalTickets: 10,
       users: 4,
       activeSubscriptions: 2,
+      userStats: {
+        active: 4,
+        new7Days: 1,
+        new30Days: 3,
+        withActiveSubscriptions: 2,
+        recent: [{
+          id: 1,
+          telegramUserId: 123456,
+          username: 'traveler',
+          firstName: 'Ali',
+          lastName: null,
+          isActive: true,
+          activeSubscriptions: 1,
+          clicks30Days: 5,
+          createdAt: new Date('2026-08-20T12:00:00Z')
+        }]
+      },
+      priceStats: {
+        currentMinPrice: 1_500_000,
+        currentAveragePrice: 2_000_000,
+        currentMaxPrice: 2_500_000,
+        trend30Days: [
+          { day: '2026-08-19', minPrice: 1_600_000, averageMinPrice: 2_100_000, maxPrice: 2_500_000, sampleCount: 10 },
+          { day: '2026-08-20', minPrice: 1_500_000, averageMinPrice: 2_000_000, maxPrice: 2_400_000, sampleCount: 12 }
+        ],
+        routes30Days: [{
+          originCode: 'TAS', destinationCode: 'IST', tripClass: 'economy',
+          minPrice: 1_500_000, averagePrice: 2_000_000, maxPrice: 2_500_000,
+          sampleCount: 22, observedDays: 2
+        }]
+      },
       clickStats: {
         clicks24Hours: 3,
         clicks7Days: 8,
         clicks30Days: 12,
         uniqueUsers30Days: 5,
-        bySource30Days: [{ source: 'miniapp_card', count: 7 }]
+        bySource30Days: [{ source: 'miniapp_card', count: 7 }],
+        daily30Days: [
+          { day: '2026-08-19', clicks: 5, uniqueUsers: 3 },
+          { day: '2026-08-20', clicks: 7, uniqueUsers: 4 }
+        ],
+        topRoutes30Days: [{
+          originCode: 'TAS', destinationCode: 'IST', clicks: 12,
+          uniqueUsers: 5, averagePrice: 2_000_000
+        }]
       },
       lastSync: null
     },
@@ -56,13 +95,20 @@ describe('renderAdminPage', () => {
 
     expect(html).toContain('Стамбул');
     expect(normalizeSpaces(html)).toContain('2 000 000 UZS');
-    expect(html).toContain('Локальные (0)');
-    expect(html).toContain('Международные (1)');
-    expect(html).toContain('🔁 Туда-обратно (1)');
-    expect(html).toContain('➡️ В одну сторону (0)');
+    expect(html).toContain('Локальные');
+    expect(html).toContain('Международные');
+    expect(html).toContain('Туда-обратно');
+    expect(html).toContain('В одну сторону');
     expect(html).toContain('name="date"');
-    expect(html).toContain('Активных билетов');
+    expect(html).toContain('Активные билеты');
     expect(html).toContain('action="/admin/sync"');
+    expect(html).toContain('class="sidebar"');
+    expect(html).toContain('href="#users"');
+    expect(html).toContain('href="#prices"');
+    expect(html).toContain('href="#clicks"');
+    expect(html).toContain('id="overview-price-chart-title"');
+    expect(html).toContain('id="overview-click-chart-title"');
+    expect(html).toContain('@traveler');
   });
 
   it('переносит фильтры даты и типа в ссылки сортировки и вкладок', () => {
@@ -104,7 +150,7 @@ describe('renderAdminPage', () => {
 
   it('показывает сброс фильтров только когда фильтр активен', () => {
     const withoutFilters = renderAdminPage(dashboard());
-    expect(withoutFilters).not.toContain('class="reset"');
+    expect(withoutFilters).not.toContain('>Сбросить</a>');
 
     const withSearch = renderAdminPage(dashboard({
       query: {
@@ -112,7 +158,7 @@ describe('renderAdminPage', () => {
         direction: 'asc', search: 'IST', page: 1
       }
     }));
-    expect(withSearch).toContain('<a class="reset" href="/admin/">Сбросить</a>');
+    expect(withSearch).toContain('<a class="button ghost" href="/admin/#tickets">Сбросить</a>');
 
     const withScope = renderAdminPage(dashboard({
       query: {
@@ -120,7 +166,7 @@ describe('renderAdminPage', () => {
         direction: 'asc', search: '', page: 1
       }
     }));
-    expect(withScope).toContain('class="reset"');
+    expect(withScope).toContain('>Сбросить</a>');
   });
 
   it('рендерит searchable список городов из кэша и сохраняет выбранный город', () => {

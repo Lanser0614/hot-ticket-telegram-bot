@@ -26,8 +26,57 @@ export interface AdminStatsRecord {
   readonly totalTickets: number;
   readonly users: number;
   readonly activeSubscriptions: number;
+  readonly userStats: AdminUserStats;
+  readonly priceStats: AdminPriceStats;
   readonly clickStats: AdminClickStats;
   readonly lastSync: AdminSyncRun | null;
+}
+
+export interface AdminUserStats {
+  readonly active: number;
+  readonly new7Days: number;
+  readonly new30Days: number;
+  readonly withActiveSubscriptions: number;
+  readonly recent: readonly AdminUserRecord[];
+}
+
+export interface AdminUserRecord {
+  readonly id: number;
+  readonly telegramUserId: number;
+  readonly username: string | null;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly isActive: boolean;
+  readonly activeSubscriptions: number;
+  readonly clicks30Days: number;
+  readonly createdAt: Date;
+}
+
+export interface AdminPriceStats {
+  readonly currentMinPrice: number | null;
+  readonly currentAveragePrice: number | null;
+  readonly currentMaxPrice: number | null;
+  readonly trend30Days: readonly AdminPricePoint[];
+  readonly routes30Days: readonly AdminRoutePriceRecord[];
+}
+
+export interface AdminPricePoint {
+  readonly day: string;
+  readonly minPrice: number;
+  readonly averageMinPrice: number;
+  readonly maxPrice: number;
+  readonly sampleCount: number;
+}
+
+export interface AdminRoutePriceRecord {
+  readonly originCode: string;
+  readonly destinationCode: string;
+  readonly tripClass: TripClass;
+  readonly minPrice: number;
+  readonly averagePrice: number;
+  readonly maxPrice: number;
+  readonly sampleCount: number;
+  readonly observedDays: number;
 }
 
 export interface AdminClickStats {
@@ -39,6 +88,22 @@ export interface AdminClickStats {
     readonly source: string;
     readonly count: number;
   }[];
+  readonly daily30Days: readonly AdminClickPoint[];
+  readonly topRoutes30Days: readonly AdminClickRouteRecord[];
+}
+
+export interface AdminClickPoint {
+  readonly day: string;
+  readonly clicks: number;
+  readonly uniqueUsers: number;
+}
+
+export interface AdminClickRouteRecord {
+  readonly originCode: string;
+  readonly destinationCode: string;
+  readonly clicks: number;
+  readonly uniqueUsers: number;
+  readonly averagePrice: number;
 }
 
 export interface AdminSyncRun {
