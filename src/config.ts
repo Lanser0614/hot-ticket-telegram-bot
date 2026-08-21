@@ -17,6 +17,20 @@ export interface VdsConfig {
   readonly pollTimeoutSeconds: number;
   readonly updateMaxAttempts: number;
   readonly aviasales: AppConfig;
+  readonly tracking: TrackingConfig;
+}
+
+export interface TrackingConfig {
+  readonly publicBaseUrl: string | null;
+  readonly clickSigningSecret: string | null;
+  readonly affiliateMarker: string | null;
+  readonly affiliateLinkTemplate: string;
+}
+
+export interface WebConfig {
+  readonly host: string;
+  readonly port: number;
+  readonly authMaxAgeSeconds: number;
 }
 
 export interface AdminConfig {
@@ -32,6 +46,24 @@ function requiredSecret(value: string | undefined, name: string): string {
     throw new ValidationError(`Отсутствует ${name}`);
   }
   return normalized;
+}
+
+function optionalString(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized === undefined || normalized.length === 0 ? null : normalized;
+}
+
+function optionalHttpsUrl(value: string | undefined, name: string): string | null {
+  const normalized = optionalString(value);
+  if (normalized === null) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new ValidationError(`Некорректный ${name}`);
+  }
+  if (parsed.protocol !== 'https:') throw new ValidationError(`${name} должен использовать HTTPS`);
+  return parsed.toString();
 }
 
 function boundedInteger(
@@ -83,7 +115,26 @@ export function loadAdminConfig(input: NodeJS.ProcessEnv): AdminConfig {
   };
 }
 
+export function loadWebConfig(input: NodeJS.ProcessEnv): WebConfig {
+  return {
+    host: input.WEB_HOST?.trim() || '127.0.0.1',
+    port: boundedInteger(input.WEB_PORT, 8081, 1, 65_535, 'WEB_PORT'),
+    authMaxAgeSeconds: boundedInteger(
+      input.MINIAPP_AUTH_MAX_AGE_SECONDS,
+      900,
+      60,
+      86_400,
+      'MINIAPP_AUTH_MAX_AGE_SECONDS'
+    )
+  };
+}
+
 export function loadVdsConfig(input: NodeJS.ProcessEnv): VdsConfig {
+  const publicBaseUrl = optionalHttpsUrl(input.PUBLIC_BASE_URL, 'PUBLIC_BASE_URL');
+  const clickSigningSecret = optionalString(input.CLICK_SIGNING_SECRET);
+  if (clickSigningSecret !== null && clickSigningSecret.length < 32) {
+    throw new ValidationError('CLICK_SIGNING_SECRET должен содержать не менее 32 символов');
+  }
   return {
     telegramBotToken: requiredSecret(input.TELEGRAM_BOT_TOKEN, 'TELEGRAM_BOT_TOKEN'),
     databasePath: input.DATABASE_PATH?.trim() || './data/hot-ticket-bot.sqlite',
@@ -103,6 +154,13 @@ export function loadVdsConfig(input: NodeJS.ProcessEnv): VdsConfig {
     ),
     aviasales: loadConfig({
       AVIASALES_EXPLORE_BASE_URL: input.AVIASALES_EXPLORE_BASE_URL
-    })
+    }),
+    tracking: {
+      publicBaseUrl,
+      clickSigningSecret,
+      affiliateMarker: optionalString(input.AFFILIATE_MARKER),
+      affiliateLinkTemplate: input.AFFILIATE_LINK_TEMPLATE?.trim()
+        || 'https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}'
+    }
   };
 }

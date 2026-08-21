@@ -28,6 +28,13 @@ const stats: AdminStatsRecord = {
   totalTickets: 42,
   users: 7,
   activeSubscriptions: 3,
+  clickStats: {
+    clicks24Hours: 2,
+    clicks7Days: 9,
+    clicks30Days: 21,
+    uniqueUsers30Days: 7,
+    bySource30Days: [{ source: 'bot_search', count: 12 }]
+  },
   lastSync: null
 };
 

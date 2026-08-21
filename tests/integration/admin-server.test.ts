@@ -29,7 +29,19 @@ const records: readonly AdminTicketRecord[] = [{
 const repository: AdminRepository = {
   listActiveTickets: () => Promise.resolve(records),
   listCachedDestinations: () => Promise.resolve(['IST']),
-  getStats: () => Promise.resolve({ totalTickets: 1, users: 1, activeSubscriptions: 0, lastSync: null })
+  getStats: () => Promise.resolve({
+    totalTickets: 1,
+    users: 1,
+    activeSubscriptions: 0,
+    clickStats: {
+      clicks24Hours: 0,
+      clicks7Days: 0,
+      clicks30Days: 0,
+      uniqueUsers30Days: 0,
+      bySource30Days: []
+    },
+    lastSync: null
+  })
 };
 
 const servers: Array<{ close: (callback: () => void) => void }> = [];

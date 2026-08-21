@@ -121,6 +121,7 @@ function createFixture(): {
     provider,
     ticketRepository: store,
     priceHistoryRepository: store,
+    routePriceRepository: store,
     subscriptionRepository: store,
     notificationHistoryRepository: store,
     userRepository: store,
@@ -134,7 +135,7 @@ function createFixture(): {
 }
 
 describe('SyncTicketsService', () => {
-  it('сохраняет новый билет и отправляет new_ticket без начальной price history', async () => {
+  it('сохраняет новый билет, историю цены и отправляет new_ticket', async () => {
     const fixture = createFixture();
     fixture.provider.tickets.set('TAS|UZS', [createTicket()]);
 
@@ -146,7 +147,8 @@ describe('SyncTicketsService', () => {
       notificationsSent: 1
     });
     expect(fixture.store.getTickets()).toHaveLength(1);
-    expect(fixture.store.priceHistoryRecords).toHaveLength(0);
+    expect(fixture.store.priceHistoryRecords).toHaveLength(1);
+    expect(fixture.store.routePriceObservations).toHaveLength(1);
     expect(fixture.notifier.sent.map((item) => item.type)).toEqual(['new_ticket']);
     expect(fixture.store.notificationRecords).toHaveLength(1);
     expect(fixture.store.syncRunRecords.at(-1)?.status).toBe('success');
@@ -202,7 +204,8 @@ describe('SyncTicketsService', () => {
     await fixture.service.execute(source);
 
     expect(fixture.store.getTickets()).toHaveLength(1);
-    expect(fixture.store.priceHistoryRecords).toHaveLength(0);
+    expect(fixture.store.priceHistoryRecords).toHaveLength(1);
+    expect(fixture.store.routePriceObservations).toHaveLength(1);
     expect(fixture.notifier.sent).toHaveLength(1);
     expect(fixture.store.notificationRecords).toHaveLength(1);
   });
@@ -215,7 +218,7 @@ describe('SyncTicketsService', () => {
     fixture.provider.tickets.set('TAS|UZS', [createTicket(1_650_000)]);
     await fixture.service.execute(source);
 
-    expect(fixture.store.priceHistoryRecords.map((item) => item.price)).toEqual([1_650_000]);
+    expect(fixture.store.priceHistoryRecords.map((item) => item.price)).toEqual([1_850_000, 1_650_000]);
     expect(fixture.notifier.sent.map((item) => item.type)).toEqual(['new_ticket', 'price_drop']);
     expect(fixture.store.notificationRecords.map((item) => item.notifiedPrice))
       .toEqual([1_850_000, 1_650_000]);
@@ -229,7 +232,7 @@ describe('SyncTicketsService', () => {
     fixture.provider.tickets.set('TAS|UZS', [createTicket(1_950_000)]);
     await fixture.service.execute(source);
 
-    expect(fixture.store.priceHistoryRecords.map((item) => item.price)).toEqual([1_950_000]);
+    expect(fixture.store.priceHistoryRecords.map((item) => item.price)).toEqual([1_850_000, 1_950_000]);
     expect(fixture.notifier.sent).toHaveLength(1);
   });
 

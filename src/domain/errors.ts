@@ -6,3 +6,10 @@ export class ValidationError extends Error {
   }
 }
 
+export class RateLimitError extends Error {
+  public override readonly name = 'RateLimitError';
+
+  public constructor(message = 'Слишком много запросов. Повторите позже.') {
+    super(message);
+  }
+}

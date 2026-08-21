@@ -3,6 +3,7 @@ import type {
   LockRepository,
   NotificationHistoryRepository,
   PriceHistoryRepository,
+  RoutePriceRepository,
   SessionRepository,
   SubscriptionRepository,
   SyncRunRepository,
@@ -27,6 +28,8 @@ import { matchesSubscription } from '../../domain/subscription.js';
 import type { TicketEventType } from '../../domain/ticket-events.js';
 import type { Ticket } from '../../domain/ticket.js';
 import type { TripClass } from '../../domain/travel-preferences.js';
+import type { RouteDailyPoint, RoutePriceObservation } from '../../domain/route-price.js';
+import { dateInTimeZone } from '../../domain/dates.js';
 
 interface PriceHistoryRecord {
   ticketId: number;
@@ -68,6 +71,10 @@ interface DestinationCacheRecord {
   updatedAt: Date;
 }
 
+interface RouteObservationRecord extends RoutePriceObservation {
+  readonly observedHour: number;
+}
+
 function destinationCacheKey(query: DestinationQuery): string {
   return [
     query.originCode,
@@ -82,6 +89,7 @@ export class MemoryStore implements
   UserRepository,
   TicketRepository,
   PriceHistoryRepository,
+  RoutePriceRepository,
   SubscriptionRepository,
   SessionRepository,
   NotificationHistoryRepository,
@@ -102,6 +110,8 @@ export class MemoryStore implements
   private nextSyncRunId = 1;
 
   public readonly priceHistoryRecords: PriceHistoryRecord[] = [];
+  public readonly routePriceObservations: RouteObservationRecord[] = [];
+  private readonly routePriceDaily = new Map<string, RouteDailyPoint>();
   public readonly notificationRecords: NotificationRecord[] = [];
   public readonly syncRunRecords: SyncRunRecord[] = [];
   public activeDestinationQueryCount = 0;
@@ -206,6 +216,11 @@ export class MemoryStore implements
 
   public findByExternalKey(externalKey: string): Promise<StoredTicket | null> {
     const ticket = this.tickets.find((item) => item.externalKey === externalKey);
+    return Promise.resolve(ticket === undefined ? null : { ...ticket });
+  }
+
+  public findTicketById(ticketId: number): Promise<StoredTicket | null> {
+    const ticket = this.tickets.find((item) => item.id === ticketId);
     return Promise.resolve(ticket === undefined ? null : { ...ticket });
   }
 
@@ -340,6 +355,80 @@ export class MemoryStore implements
   public addPrice(ticketId: number, price: number, observedAt: Date): Promise<void> {
     this.priceHistoryRecords.push({ ticketId, price, observedAt });
     return Promise.resolve();
+  }
+
+  public recordObservation(input: RoutePriceObservation): Promise<void> {
+    const observedHour = Math.floor(input.observedAt.getTime() / 3_600_000);
+    const existingIndex = this.routePriceObservations.findIndex((item) => (
+      item.routeKey === input.routeKey
+      && item.departureDate === input.departureDate
+      && item.isDirect === input.isDirect
+      && item.hasBaggage === input.hasBaggage
+      && item.observedHour === observedHour
+    ));
+    const observation = { ...input, observedAt: new Date(input.observedAt), observedHour };
+    if (existingIndex === -1) {
+      this.routePriceObservations.push(observation);
+      return Promise.resolve();
+    }
+    const existing = this.routePriceObservations[existingIndex];
+    if (existing !== undefined) {
+      this.routePriceObservations[existingIndex] = {
+        ...observation,
+        price: Math.min(existing.price, observation.price),
+        observedAt: existing.observedAt > observation.observedAt
+          ? new Date(existing.observedAt)
+          : new Date(observation.observedAt)
+      };
+    }
+    return Promise.resolve();
+  }
+
+  public rebuildDailyAggregate(routeKey: string, day: string, updatedAt: Date): Promise<void> {
+    void updatedAt;
+    const prices = this.routePriceObservations
+      .filter((item) => (
+        item.routeKey === routeKey
+        && dateInTimeZone(item.observedAt, 'Asia/Tashkent') === day
+      ))
+      .map((item) => item.price)
+      .sort((left, right) => left - right);
+    if (prices.length === 0) return Promise.resolve();
+    const middle = Math.floor(prices.length / 2);
+    const right = prices[middle] ?? 0;
+    const medianPrice = prices.length % 2 === 1
+      ? right
+      : Math.round(((prices[middle - 1] ?? right) + right) / 2);
+    this.routePriceDaily.set(`${routeKey}|${day}`, {
+      day,
+      minPrice: prices[0] ?? 0,
+      averagePrice: Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length),
+      medianPrice,
+      maxPrice: prices.at(-1) ?? 0,
+      sampleCount: prices.length
+    });
+    return Promise.resolve();
+  }
+
+  public getDailySeries(routeKey: string, days: number, now: Date): Promise<readonly RouteDailyPoint[]> {
+    const from = new Date(now.getTime() - Math.max(0, days - 1) * 86_400_000);
+    const fromDay = dateInTimeZone(from, 'Asia/Tashkent');
+    return Promise.resolve([...this.routePriceDaily.entries()]
+      .filter(([key, point]) => key.startsWith(`${routeKey}|`) && point.day >= fromDay)
+      .map(([, point]) => ({ ...point }))
+      .sort((left, right) => left.day.localeCompare(right.day)));
+  }
+
+  public pruneObservations(olderThan: Date): Promise<number> {
+    let deleted = 0;
+    for (let index = this.routePriceObservations.length - 1; index >= 0; index -= 1) {
+      const observation = this.routePriceObservations[index];
+      if (observation !== undefined && observation.observedAt < olderThan) {
+        this.routePriceObservations.splice(index, 1);
+        deleted += 1;
+      }
+    }
+    return Promise.resolve(deleted);
   }
 
   public findMatching(ticket: Ticket): Promise<readonly Subscription[]> {

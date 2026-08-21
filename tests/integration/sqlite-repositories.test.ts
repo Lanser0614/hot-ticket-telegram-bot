@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports.js';
 import type { Ticket } from '../../src/domain/ticket.js';
+import { createRouteKey } from '../../src/domain/route-price.js';
 import { SqliteAdminRepository } from '../../src/infrastructure/sqlite/admin-repository.js';
 import { openSqliteDatabase } from '../../src/infrastructure/sqlite/database.js';
 import { applyMigrations } from '../../src/infrastructure/sqlite/migrations.js';
@@ -221,6 +222,85 @@ describe('ApplicationRepositories on SQLite', () => {
 
     await expect(repositories.getCachedActiveDestinations(query)).resolves.toBeNull();
     await expect(repositories.getCachedActiveDestinations(nextDay)).resolves.toEqual([]);
+    database.close();
+  });
+
+  it('агрегирует почасовые наблюдения в дневную историю маршрута', async () => {
+    const { database, repositories } = createRepositories();
+    const routeKey = createRouteKey('TAS', 'IST', 'economy');
+    const observedAt = new Date('2026-08-04T12:00:00Z');
+    const base = {
+      routeKey,
+      originCode: 'TAS',
+      destinationCode: 'IST',
+      tripClass: 'economy' as const,
+      isDirect: true,
+      hasBaggage: false,
+      departureDate: '2026-09-15',
+      daysAhead: 42,
+      currencyCode: 'UZS',
+      observedAt
+    };
+    await repositories.recordObservation({ ...base, price: 1_900_000 });
+    await repositories.recordObservation({ ...base, price: 1_700_000 });
+    await repositories.recordObservation({
+      ...base,
+      price: 2_100_000,
+      departureDate: '2026-09-16'
+    });
+    await repositories.rebuildDailyAggregate(routeKey, '2026-08-04', observedAt);
+
+    await expect(repositories.getDailySeries(routeKey, 30, observedAt)).resolves.toEqual([{
+      day: '2026-08-04',
+      minPrice: 1_700_000,
+      averagePrice: 1_900_000,
+      medianPrice: 1_900_000,
+      maxPrice: 2_100_000,
+      sampleCount: 2
+    }]);
+    expect(await database.get('SELECT count(*) AS count FROM route_price_observations'))
+      .toEqual({ count: 2 });
+    database.close();
+  });
+
+  it('сохраняет snapshot перехода и находит недавний дубль', async () => {
+    const { database, repositories } = createRepositories();
+    const observedAt = new FixedClock().now();
+    const user = await repositories.upsertTelegramProfile({
+      telegramUserId: 100,
+      telegramChatId: 200,
+      username: null,
+      firstName: null,
+      lastName: null,
+      languageCode: null
+    }, observedAt);
+    const stored = (await repositories.upsert(ticket(), observedAt)).stored;
+
+    const clickId = await repositories.addClick({
+      ticket: stored,
+      userId: user.id,
+      source: 'miniapp_card',
+      subscriptionId: null,
+      userAgentKind: 'human',
+      clickedAt: observedAt
+    });
+
+    expect(clickId).toBe(1);
+    await expect(repositories.hasRecentClick(
+      user.id,
+      stored.id,
+      new Date(observedAt.getTime() - 60_000)
+    )).resolves.toBe(true);
+    expect(await database.get(`
+      SELECT source, origin_code, destination_code, price, user_agent_kind
+      FROM link_clicks WHERE id = 1
+    `)).toEqual({
+      source: 'miniapp_card',
+      origin_code: 'TAS',
+      destination_code: 'IST',
+      price: 1_850_000,
+      user_agent_kind: 'human'
+    });
     database.close();
   });
 });

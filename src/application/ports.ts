@@ -2,6 +2,8 @@ import type { Subscription } from '../domain/subscription.js';
 import type { TicketEventType } from '../domain/ticket-events.js';
 import type { Ticket } from '../domain/ticket.js';
 import type { TripClass } from '../domain/travel-preferences.js';
+import type { RouteDailyPoint, RoutePriceObservation } from '../domain/route-price.js';
+import type { ClickSource, UserAgentKind } from '../domain/click-tracking.js';
 import type {
   DestinationQuery,
   NotificationInput,
@@ -31,6 +33,7 @@ export interface UserRepository {
 }
 
 export interface TicketRepository {
+  findTicketById(ticketId: number): Promise<StoredTicket | null>;
   findByExternalKey(externalKey: string): Promise<StoredTicket | null>;
   upsert(ticket: Ticket, observedAt: Date): Promise<{ stored: StoredTicket; previous: StoredTicket | null }>;
   deactivateUnseen(
@@ -52,8 +55,36 @@ export interface TicketRepository {
   ): Promise<void>;
 }
 
+export interface TrackedLinkFactory {
+  create(input: {
+    ticket: StoredTicket;
+    source: ClickSource;
+    userId: number | null;
+    subscriptionId: number | null;
+  }): string;
+}
+
+export interface ClickRepository {
+  hasRecentClick(userId: number, ticketId: number, since: Date): Promise<boolean>;
+  addClick(input: {
+    ticket: StoredTicket;
+    userId: number | null;
+    source: ClickSource;
+    subscriptionId: number | null;
+    userAgentKind: UserAgentKind;
+    clickedAt: Date;
+  }): Promise<number>;
+}
+
 export interface PriceHistoryRepository {
   addPrice(ticketId: number, price: number, observedAt: Date): Promise<void>;
+}
+
+export interface RoutePriceRepository {
+  recordObservation(input: RoutePriceObservation): Promise<void>;
+  rebuildDailyAggregate(routeKey: string, day: string, updatedAt: Date): Promise<void>;
+  getDailySeries(routeKey: string, days: number, now: Date): Promise<readonly RouteDailyPoint[]>;
+  pruneObservations(olderThan: Date): Promise<number>;
 }
 
 export interface SubscriptionRepository {

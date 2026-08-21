@@ -19,7 +19,7 @@ export type CreateSubscriptionInput = Pick<
   | 'maxPrice'
   | 'directOnly'
   | 'roundTripOnly'
->;
+> & { readonly baggageRequired?: boolean };
 
 export class SubscriptionService {
   public constructor(
@@ -40,8 +40,16 @@ export class SubscriptionService {
       userId,
       originCode: DEFAULT_ORIGIN_CODE,
       currencyCode: DEFAULT_CURRENCY_CODE,
-      baggageRequired: false
+      baggageRequired: input.baggageRequired ?? false
     }), this.clock.now());
+  }
+
+  public listForUser(userId: number): Promise<readonly Subscription[]> {
+    return this.subscriptions.listByUser(userId);
+  }
+
+  public deactivateForUser(userId: number, subscriptionId: number): Promise<boolean> {
+    return this.subscriptions.deactivateOwned(userId, subscriptionId, this.clock.now());
   }
 
   public async listForTelegramUser(telegramUserId: number): Promise<readonly Subscription[]> {

@@ -26,7 +26,19 @@ export interface AdminStatsRecord {
   readonly totalTickets: number;
   readonly users: number;
   readonly activeSubscriptions: number;
+  readonly clickStats: AdminClickStats;
   readonly lastSync: AdminSyncRun | null;
+}
+
+export interface AdminClickStats {
+  readonly clicks24Hours: number;
+  readonly clicks7Days: number;
+  readonly clicks30Days: number;
+  readonly uniqueUsers30Days: number;
+  readonly bySource30Days: readonly {
+    readonly source: string;
+    readonly count: number;
+  }[];
 }
 
 export interface AdminSyncRun {

@@ -100,10 +100,36 @@ export class SqliteAdminRepository implements AdminRepository {
     const lastSync = await this.db.get(
       'SELECT * FROM sync_runs ORDER BY id DESC LIMIT 1'
     );
+    const clicks = await this.db.get(`
+      SELECT
+        COALESCE(SUM(CASE WHEN clicked_at >= unixepoch('now', '-1 day') THEN 1 ELSE 0 END), 0) AS clicks_24h,
+        COALESCE(SUM(CASE WHEN clicked_at >= unixepoch('now', '-7 days') THEN 1 ELSE 0 END), 0) AS clicks_7d,
+        COALESCE(SUM(CASE WHEN clicked_at >= unixepoch('now', '-30 days') THEN 1 ELSE 0 END), 0) AS clicks_30d,
+        COUNT(DISTINCT CASE WHEN clicked_at >= unixepoch('now', '-30 days') THEN user_id END) AS users_30d
+      FROM link_clicks
+      WHERE user_agent_kind = 'human'
+    `);
+    const clickSources = await this.db.all(`
+      SELECT source, count(*) AS count
+      FROM link_clicks
+      WHERE user_agent_kind = 'human' AND clicked_at >= unixepoch('now', '-30 days')
+      GROUP BY source
+      ORDER BY count DESC, source ASC
+    `);
     return {
       totalTickets: totals === null ? 0 : asNumber(totals.count),
       users: users === null ? 0 : asNumber(users.count),
       activeSubscriptions: subscriptions === null ? 0 : asNumber(subscriptions.count),
+      clickStats: {
+        clicks24Hours: clicks === null ? 0 : asNumber(clicks.clicks_24h),
+        clicks7Days: clicks === null ? 0 : asNumber(clicks.clicks_7d),
+        clicks30Days: clicks === null ? 0 : asNumber(clicks.clicks_30d),
+        uniqueUsers30Days: clicks === null ? 0 : asNumber(clicks.users_30d),
+        bySource30Days: clickSources.map((row) => ({
+          source: asString(row.source),
+          count: asNumber(row.count)
+        }))
+      },
       lastSync: mapLastSync(lastSync)
     };
   }

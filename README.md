@@ -396,16 +396,54 @@ Systemd unit принудительно оставляет Node.js на `127.0.0
 продлевает сертификат, перенаправляет HTTP на HTTPS и проксирует админку.
 Переход на `/` перенаправляет браузер в защищённый раздел `/admin/`.
 
-Маршруты `/app/*`, `/api/*` и `/go/*` уже зарезервированы за будущим
-Mini App web service на `127.0.0.1:8081`.
+Маршруты `/app/*`, `/api/*` и `/go/*` обслуживает Mini App web service на
+`127.0.0.1:8081`.
 
-Установите systemd unit и запустите сервис:
+## Telegram Mini App
+
+Mini App доступен по адресу `https://ticket.crosfit.uz/app/`. Интерфейс и бот
+используют одну SQLite, поэтому подписки и пользовательские настройки не
+дублируются. Web service предоставляет API под `/api/v1/*`, а `/go/*` записывает
+переход и перенаправляет пользователя на Aviasales.
+
+Добавьте в `/etc/hot-ticket-bot.env`:
+
+```dotenv
+PUBLIC_BASE_URL=https://ticket.crosfit.uz
+WEB_HOST=127.0.0.1
+WEB_PORT=8081
+CLICK_SIGNING_SECRET=сгенерированный-секрет-минимум-32-символа
+AFFILIATE_MARKER=
+AFFILIATE_LINK_TEMPLATE=https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}
+MINIAPP_AUTH_MAX_AGE_SECONDS=900
+```
+
+Секрет можно сгенерировать непосредственно на VDS, не печатая его в чат:
 
 ```bash
-sudo install -m 644 deploy/systemd/hot-ticket-admin.service /etc/systemd/system/hot-ticket-admin.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now hot-ticket-admin
+openssl rand -hex 32
 ```
+
+`AFFILIATE_MARKER` можно оставить пустым: внутренний click tracking продолжит
+работать, а редирект поведёт на чистую ссылку Aviasales. После получения маркера
+вставьте его в environment и перезапустите `hot-ticket-web` и
+`hot-ticket-bot`.
+
+Mini App проверяет подпись `Telegram.WebApp.initData` на сервере. Значения
+`user.id`, присланные обычным JSON-полем, не используются.
+
+После deployment установите systemd unit и запустите сервис:
+
+```bash
+sudo install -m 644 deploy/systemd/hot-ticket-web.service /etc/systemd/system/hot-ticket-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now hot-ticket-web
+sudo systemctl status hot-ticket-web --no-pager
+```
+
+Затем откройте `@BotFather`, выберите бота и настройте Menu Button с URL
+`https://ticket.crosfit.uz/app/`. Кнопка Mini App также появится в
+клавиатуре после `/start`, если `PUBLIC_BASE_URL` задан.
 
 Установите Caddy и конфигурацию повторным запуском bootstrap-скрипта:
 

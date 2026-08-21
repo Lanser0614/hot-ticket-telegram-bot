@@ -33,7 +33,19 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
     pageSize: 50,
     counts: { active: 1, domestic: 0, international: 1, roundTrip: 1, oneWay: 0 },
     destinations: [{ code: 'IST', name: 'Стамбул' }],
-    stats: { totalTickets: 10, users: 4, activeSubscriptions: 2, lastSync: null },
+    stats: {
+      totalTickets: 10,
+      users: 4,
+      activeSubscriptions: 2,
+      clickStats: {
+        clicks24Hours: 3,
+        clicks7Days: 8,
+        clicks30Days: 12,
+        uniqueUsers30Days: 5,
+        bySource30Days: [{ source: 'miniapp_card', count: 7 }]
+      },
+      lastSync: null
+    },
     ...overrides
   };
 }

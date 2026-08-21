@@ -11,6 +11,7 @@
     "backup": "node --env-file-if-exists=.env dist/entries/backup.js",
     "start": "node --env-file-if-exists=.env dist/entries/bot.js",
     "start:admin": "node --env-file-if-exists=.env dist/entries/admin.js",
+    "start:web": "node --env-file-if-exists=.env dist/entries/web.js",
     "sync": "node --env-file-if-exists=.env dist/entries/sync.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tabler/icons": "^3.46.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.0",
     "@types/node": "^26.1.2",

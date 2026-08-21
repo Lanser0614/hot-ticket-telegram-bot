@@ -6,6 +6,7 @@ import type {
   Logger,
   NotificationHistoryRepository,
   PriceHistoryRepository,
+  RoutePriceRepository,
   SubscriptionRepository,
   SyncRunRepository,
   TicketNotifier,
@@ -19,11 +20,13 @@ import {
   matchesUserTicketPreferences,
   type TripClass
 } from '../domain/travel-preferences.js';
+import { calculateDaysAhead, createRouteKey } from '../domain/route-price.js';
 
 interface SyncTicketsDependencies {
   provider: HotTicketsProvider;
   ticketRepository: TicketRepository;
   priceHistoryRepository: PriceHistoryRepository;
+  routePriceRepository: RoutePriceRepository;
   subscriptionRepository: SubscriptionRepository;
   notificationHistoryRepository: NotificationHistoryRepository;
   userRepository: UserRepository;
@@ -66,14 +69,51 @@ export class SyncTicketsService {
         status: 'success',
         fetched: tickets.length
       };
+      const observedRouteKeys = new Set<string>();
 
       for (const ticket of tickets) {
         const { stored, previous } = await this.dependencies.ticketRepository.upsert(ticket, observedAt);
         if (previous === null) result.inserted += 1;
         else result.updated += 1;
 
-        if (previous !== null && previous.price !== stored.price) {
+        if (previous === null || previous.price !== stored.price) {
           await this.dependencies.priceHistoryRepository.addPrice(stored.id, stored.price, observedAt);
+        }
+
+        const routeKey = createRouteKey(
+          stored.originCode,
+          stored.destinationCode,
+          stored.tripClass
+        );
+        try {
+          if (stored.price < 100_000 || stored.price > 100_000_000) {
+            this.dependencies.logger.warn('route_observation_rejected', {
+              ticketId: stored.id,
+              routeKey,
+              price: stored.price
+            });
+          } else {
+            await this.dependencies.routePriceRepository.recordObservation({
+              routeKey,
+              originCode: stored.originCode,
+              destinationCode: stored.destinationCode,
+              tripClass: stored.tripClass,
+              isDirect: stored.isDirect,
+              hasBaggage: stored.hasBaggage,
+              departureDate: stored.departureDate,
+              daysAhead: calculateDaysAhead(stored.departureDate, observedAt),
+              price: stored.price,
+              currencyCode: stored.currencyCode,
+              observedAt
+            });
+            observedRouteKeys.add(routeKey);
+          }
+        } catch (error: unknown) {
+          this.dependencies.logger.warn('route_observation_failed', {
+            ticketId: stored.id,
+            routeKey,
+            error: error instanceof Error ? error.message : 'Неизвестная ошибка'
+          });
         }
 
         const event = detectTicketEvent(previous, stored);
@@ -112,6 +152,18 @@ export class SyncTicketsService {
           result.notificationsSent += 1;
         }
       }
+
+      const observedDay = dateInTimeZone(observedAt, 'Asia/Tashkent');
+      for (const routeKey of observedRouteKeys) {
+        await this.dependencies.routePriceRepository.rebuildDailyAggregate(
+          routeKey,
+          observedDay,
+          observedAt
+        );
+      }
+      await this.dependencies.routePriceRepository.pruneObservations(
+        new Date(observedAt.getTime() - 30 * 86_400_000)
+      );
 
       await this.dependencies.ticketRepository.deactivateUnseen(
         source,

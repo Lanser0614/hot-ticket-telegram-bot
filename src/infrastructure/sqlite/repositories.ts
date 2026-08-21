@@ -1,8 +1,10 @@
 import type {
   Clock,
+  ClickRepository,
   LockRepository,
   NotificationHistoryRepository,
   PriceHistoryRepository,
+  RoutePriceRepository,
   SessionRepository,
   SubscriptionRepository,
   SyncRunRepository,
@@ -25,6 +27,9 @@ import type { Subscription } from '../../domain/subscription.js';
 import type { TicketEventType } from '../../domain/ticket-events.js';
 import type { Ticket } from '../../domain/ticket.js';
 import type { TripClass } from '../../domain/travel-preferences.js';
+import type { RouteDailyPoint, RoutePriceObservation } from '../../domain/route-price.js';
+import { dateInTimeZone } from '../../domain/dates.js';
+import type { ClickSource, UserAgentKind } from '../../domain/click-tracking.js';
 
 type Row = Readonly<Record<string, unknown>>;
 type Parameters = Readonly<Record<string, unknown>>;
@@ -184,7 +189,9 @@ function mapSyncSource(row: Row): SyncSource {
 export class ApplicationRepositories implements
   UserRepository,
   TicketRepository,
+  ClickRepository,
   PriceHistoryRepository,
+  RoutePriceRepository,
   SubscriptionRepository,
   SessionRepository,
   NotificationHistoryRepository,
@@ -271,6 +278,14 @@ export class ApplicationRepositories implements
     const row = await this.db.get(
       'SELECT * FROM tickets WHERE external_key = :externalKey',
       { ':externalKey': externalKey }
+    );
+    return row === null ? null : mapTicket(row);
+  }
+
+  public async findTicketById(ticketId: number): Promise<StoredTicket | null> {
+    const row = await this.db.get(
+      'SELECT * FROM tickets WHERE id = :ticketId',
+      { ':ticketId': ticketId }
     );
     return row === null ? null : mapTicket(row);
   }
@@ -485,6 +500,173 @@ export class ApplicationRepositories implements
       INSERT INTO ticket_price_history (ticket_id, price, observed_at)
       VALUES (:ticketId, :price, :observedAt)
     `, { ':ticketId': ticketId, ':price': price, ':observedAt': seconds(observedAt) });
+  }
+
+  public async recordObservation(input: RoutePriceObservation): Promise<void> {
+    const observedAt = seconds(input.observedAt);
+    await this.db.run(`
+      INSERT INTO route_price_observations (
+        route_key, origin_code, destination_code, trip_class, is_direct,
+        has_baggage, departure_date, days_ahead, price, currency_code,
+        observed_at, observed_hour
+      ) VALUES (
+        :routeKey, :origin, :destination, :tripClass, :isDirect,
+        :hasBaggage, :departureDate, :daysAhead, :price, :currency,
+        :observedAt, :observedHour
+      )
+      ON CONFLICT(
+        route_key, departure_date, is_direct, has_baggage, observed_hour
+      ) DO UPDATE SET
+        price = MIN(route_price_observations.price, excluded.price),
+        observed_at = MAX(route_price_observations.observed_at, excluded.observed_at)
+    `, {
+      ':routeKey': input.routeKey,
+      ':origin': input.originCode,
+      ':destination': input.destinationCode,
+      ':tripClass': input.tripClass,
+      ':isDirect': input.isDirect ? 1 : 0,
+      ':hasBaggage': input.hasBaggage ? 1 : 0,
+      ':departureDate': input.departureDate,
+      ':daysAhead': input.daysAhead,
+      ':price': input.price,
+      ':currency': input.currencyCode,
+      ':observedAt': observedAt,
+      ':observedHour': Math.floor(observedAt / 3_600)
+    });
+  }
+
+  public async rebuildDailyAggregate(
+    routeKey: string,
+    day: string,
+    updatedAt: Date
+  ): Promise<void> {
+    const start = Math.floor(Date.parse(`${day}T00:00:00+05:00`) / 1_000);
+    const rows = await this.db.all(`
+      SELECT origin_code, destination_code, trip_class, price
+      FROM route_price_observations
+      WHERE route_key = :routeKey AND observed_at >= :start AND observed_at < :end
+      ORDER BY price ASC
+    `, { ':routeKey': routeKey, ':start': start, ':end': start + 86_400 });
+    if (rows.length === 0) return;
+    const prices = rows.map((row) => requiredNumber(row, 'price'));
+    const middle = Math.floor(prices.length / 2);
+    const right = prices[middle] ?? 0;
+    const median = prices.length % 2 === 1
+      ? right
+      : Math.round(((prices[middle - 1] ?? right) + right) / 2);
+    const total = prices.reduce((sum, price) => sum + price, 0);
+    const first = rows[0];
+    if (first === undefined) return;
+    await this.db.run(`
+      INSERT INTO route_price_daily (
+        route_key, day, origin_code, destination_code, trip_class,
+        min_price, avg_price, median_price, max_price, sample_count, updated_at
+      ) VALUES (
+        :routeKey, :day, :origin, :destination, :tripClass,
+        :minPrice, :avgPrice, :medianPrice, :maxPrice, :sampleCount, :updatedAt
+      )
+      ON CONFLICT(route_key, day) DO UPDATE SET
+        min_price = excluded.min_price,
+        avg_price = excluded.avg_price,
+        median_price = excluded.median_price,
+        max_price = excluded.max_price,
+        sample_count = excluded.sample_count,
+        updated_at = excluded.updated_at
+    `, {
+      ':routeKey': routeKey,
+      ':day': day,
+      ':origin': requiredString(first, 'origin_code'),
+      ':destination': requiredString(first, 'destination_code'),
+      ':tripClass': requiredString(first, 'trip_class'),
+      ':minPrice': prices[0] ?? 0,
+      ':avgPrice': Math.round(total / prices.length),
+      ':medianPrice': median,
+      ':maxPrice': prices.at(-1) ?? 0,
+      ':sampleCount': prices.length,
+      ':updatedAt': seconds(updatedAt)
+    });
+  }
+
+  public async getDailySeries(
+    routeKey: string,
+    days: number,
+    now: Date
+  ): Promise<readonly RouteDailyPoint[]> {
+    const from = new Date(now.getTime() - Math.max(0, days - 1) * 86_400_000);
+    const rows = await this.db.all(`
+      SELECT day, min_price, avg_price, median_price, max_price, sample_count
+      FROM route_price_daily
+      WHERE route_key = :routeKey AND day >= :fromDay
+      ORDER BY day ASC
+    `, { ':routeKey': routeKey, ':fromDay': dateInTimeZone(from, 'Asia/Tashkent') });
+    return rows.map((row) => ({
+      day: requiredString(row, 'day'),
+      minPrice: requiredNumber(row, 'min_price'),
+      averagePrice: requiredNumber(row, 'avg_price'),
+      medianPrice: requiredNumber(row, 'median_price'),
+      maxPrice: requiredNumber(row, 'max_price'),
+      sampleCount: requiredNumber(row, 'sample_count')
+    }));
+  }
+
+  public async pruneObservations(olderThan: Date): Promise<number> {
+    const rows = await this.db.all(`
+      DELETE FROM route_price_observations
+      WHERE observed_at < :olderThan
+      RETURNING id
+    `, { ':olderThan': seconds(olderThan) });
+    return rows.length;
+  }
+
+  public async hasRecentClick(
+    userId: number,
+    ticketId: number,
+    since: Date
+  ): Promise<boolean> {
+    return await this.db.get(`
+      SELECT 1 AS found FROM link_clicks
+      WHERE user_id = :userId AND ticket_id = :ticketId AND clicked_at >= :since
+      LIMIT 1
+    `, {
+      ':userId': userId,
+      ':ticketId': ticketId,
+      ':since': seconds(since)
+    }) !== null;
+  }
+
+  public async addClick(input: {
+    ticket: StoredTicket;
+    userId: number | null;
+    source: ClickSource;
+    subscriptionId: number | null;
+    userAgentKind: UserAgentKind;
+    clickedAt: Date;
+  }): Promise<number> {
+    const row = await this.db.get(`
+      INSERT INTO link_clicks (
+        ticket_id, user_id, source, origin_code, destination_code,
+        departure_date, price, currency_code, subscription_id,
+        user_agent_kind, clicked_at
+      ) VALUES (
+        :ticketId, :userId, :source, :origin, :destination,
+        :departureDate, :price, :currency, :subscriptionId,
+        :userAgentKind, :clickedAt
+      ) RETURNING id
+    `, {
+      ':ticketId': input.ticket.id,
+      ':userId': input.userId,
+      ':source': input.source,
+      ':origin': input.ticket.originCode,
+      ':destination': input.ticket.destinationCode,
+      ':departureDate': input.ticket.departureDate,
+      ':price': input.ticket.price,
+      ':currency': input.ticket.currencyCode,
+      ':subscriptionId': input.subscriptionId,
+      ':userAgentKind': input.userAgentKind,
+      ':clickedAt': seconds(input.clickedAt)
+    });
+    if (row === null) throw new Error('Не удалось записать переход');
+    return requiredNumber(row, 'id');
   }
 
   public async findMatching(ticket: Ticket): Promise<readonly Subscription[]> {

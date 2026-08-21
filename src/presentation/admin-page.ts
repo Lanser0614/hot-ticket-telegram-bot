@@ -147,6 +147,7 @@ function pagination(dashboard: AdminDashboard, basePath: string): string {
 
 function statsCards(dashboard: AdminDashboard): string {
   const { stats, counts } = dashboard;
+  const clicks = stats.clickStats;
   const sync = stats.lastSync;
   const syncText = sync === null
     ? 'ещё не было'
@@ -157,11 +158,22 @@ function statsCards(dashboard: AdminDashboard): string {
     ['Всего билетов в базе', formatNumber(stats.totalTickets)],
     ['Пользователей', formatNumber(stats.users)],
     ['Активных подписок', formatNumber(stats.activeSubscriptions)],
+    ['Переходы: 24 ч / 7 дн.', `${formatNumber(clicks.clicks24Hours)} / ${formatNumber(clicks.clicks7Days)}`],
+    ['Переходы за 30 дней', formatNumber(clicks.clicks30Days)],
+    ['Людей с переходами за 30 дней', formatNumber(clicks.uniqueUsers30Days)],
     ['Последняя синхронизация', syncText]
   ];
   return `<div class="cards">${cards
     .map(([label, value]) => `<div class="card"><div class="card-label">${escapeHtml(label)}</div><div class="card-value">${value}</div></div>`)
     .join('')}</div>`;
+}
+
+function clickSources(dashboard: AdminDashboard): string {
+  const rows = dashboard.stats.clickStats.bySource30Days;
+  if (rows.length === 0) return '';
+  return `<div class="click-sources"><strong>Источники переходов за 30 дней:</strong> ${rows
+    .map((item) => `${escapeHtml(item.source)} — ${formatNumber(item.count)}`)
+    .join(' · ')}</div>`;
 }
 
 const STYLES = `
@@ -206,6 +218,7 @@ const STYLES = `
   .muted { color: #9ca3af; font-size: 12px; }
   .pagination { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
   .flash { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .click-sources { margin: -8px 0 20px; padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid #e3e5e8; color: #4b5563; font-size: 13px; }
   .empty { padding: 24px; text-align: center; color: #6b7280; }
   @media (max-width: 720px) {
     body { padding: 16px; }
@@ -249,6 +262,7 @@ export function renderAdminPage(
   <h1>✈️ HotTicket — админ-панель</h1>
   ${flashHtml}
   ${statsCards(dashboard)}
+  ${clickSources(dashboard)}
   <div class="toolbar">
     <div class="filter-group">
       <span class="group-label">Направление</span>

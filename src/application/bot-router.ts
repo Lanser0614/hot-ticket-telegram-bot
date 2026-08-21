@@ -1,5 +1,6 @@
 import type {
-  TelegramGateway
+  TelegramGateway,
+  TrackedLinkFactory
 } from './ports.js';
 import type { SessionService } from './sessions.js';
 import type { SubscriptionService } from './subscriptions.js';
@@ -55,6 +56,8 @@ interface RouterDependencies {
   subscriptions: SubscriptionService;
   sessions: SessionService;
   gateway: TelegramGateway;
+  links?: TrackedLinkFactory;
+  miniAppUrl?: string | null;
 }
 
 function requirePayloadString(
@@ -255,7 +258,7 @@ export class TelegramBotRouter {
       await this.dependencies.gateway.sendMessage({
         chatId: message.chat.id,
         text: 'Главное меню',
-        replyMarkup: mainKeyboard()
+        replyMarkup: mainKeyboard(this.dependencies.miniAppUrl ?? null)
       });
       return;
     }
@@ -319,15 +322,20 @@ export class TelegramBotRouter {
       await this.send(chatId, 'Подходящие билеты не найдены.');
       return;
     }
+    const user = await this.dependencies.users.requireByTelegramUserId(telegramUserId);
     for (const ticket of page.tickets) {
       await this.dependencies.gateway.sendMessage({
         chatId,
         text: presentTicket(ticket),
         parseMode: 'HTML',
-        replyMarkup: ticketKeyboard(ticket.ticketLink)
+        replyMarkup: ticketKeyboard(this.dependencies.links?.create({
+          ticket,
+          source: 'bot_search',
+          userId: user.id,
+          subscriptionId: null
+        }) ?? ticket.ticketLink)
       });
     }
-    const user = await this.dependencies.users.requireByTelegramUserId(telegramUserId);
     await this.dependencies.gateway.sendMessage({
       chatId,
       text: `Показано ${page.offset + 1}–${page.offset + page.tickets.length}`,

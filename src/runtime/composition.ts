@@ -8,6 +8,7 @@ import { SyncHotTicketsJob } from '../application/sync-hot-tickets-job.js';
 import { SyncTicketsService } from '../application/sync-tickets.js';
 import { TicketService } from '../application/tickets.js';
 import { UserService } from '../application/users.js';
+import { SignedTrackedLinkFactory } from '../application/tracked-links.js';
 import type { VdsConfig } from '../config.js';
 import {
   AviasalesClient,
@@ -48,13 +49,21 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
   const database = openSqliteDatabase(config.databasePath);
   applyMigrations(database, overrides.migrationsDirectory ?? resolve('migrations'));
   const repositories = new ApplicationRepositories(database, clock);
-  const telegram = new TelegramBotApiClient(config.telegramBotToken, fetch);
+  const links = new SignedTrackedLinkFactory({
+    publicBaseUrl: config.tracking.publicBaseUrl,
+    signingSecret: config.tracking.clickSigningSecret
+  });
+  const telegram = new TelegramBotApiClient(config.telegramBotToken, fetch, links);
   const router = new TelegramBotRouter({
     users: new UserService(repositories, clock),
     tickets: new TicketService(repositories, repositories, clock),
     subscriptions: new SubscriptionService(repositories, repositories, clock),
     sessions: new SessionService(repositories, clock),
-    gateway: telegram
+    gateway: telegram,
+    links,
+    miniAppUrl: config.tracking.publicBaseUrl === null
+      ? null
+      : new URL('/app/', config.tracking.publicBaseUrl).toString()
   });
   const provider = new AviasalesHotTicketsProvider(
     new AviasalesClient(new NativeTextHttpClient(fetch), sleeper, config.aviasales),
@@ -64,6 +73,7 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     provider,
     ticketRepository: repositories,
     priceHistoryRepository: repositories,
+    routePriceRepository: repositories,
     subscriptionRepository: repositories,
     notificationHistoryRepository: repositories,
     userRepository: repositories,
@@ -86,6 +96,9 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
   return {
     database,
     repositories,
+    clock,
+    logger,
+    links,
     telegram,
     router,
     polling,

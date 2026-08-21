@@ -40,7 +40,11 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
     languageOptions: {
       globals: {
-        console: 'readonly'
+        console: 'readonly',
+        document: 'readonly',
+        fetch: 'readonly',
+        FormData: 'readonly',
+        URLSearchParams: 'readonly'
       }
     }
   }

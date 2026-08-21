@@ -8,7 +8,7 @@ ticket.crosfit.uz {
 		-Server
 	}
 
-	# These routes will be served by hot-ticket-web when the Mini App API lands.
+	# Mini App static files, authenticated API, and signed click redirects.
 	@miniapp path /app /app/* /api /api/* /go /go/*
 	handle @miniapp {
 		reverse_proxy 127.0.0.1:8081

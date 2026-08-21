@@ -3,7 +3,7 @@ import type {
   TelegramCallbackAnswer,
   TelegramMessageInput
 } from '../../application/models.js';
-import type { TelegramGateway, TicketNotifier } from '../../application/ports.js';
+import type { TelegramGateway, TicketNotifier, TrackedLinkFactory } from '../../application/ports.js';
 import { formatLocationLabel } from '../../domain/locations.js';
 import { presentTripClass } from '../../domain/travel-preferences.js';
 import {
@@ -34,7 +34,8 @@ function escapeHtml(value: string): string {
 export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
   public constructor(
     private readonly token: string,
-    private readonly fetch: FetchLike = globalThis.fetch
+    private readonly fetch: FetchLike = globalThis.fetch,
+    private readonly links?: TrackedLinkFactory
   ) {}
 
   public async getUpdates(
@@ -97,12 +98,18 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
       `💺 ${presentTripClass(input.ticket.tripClass)}`,
       `🧳 ${input.ticket.hasBaggage ? 'С багажом' : 'Без багажа'}`
     ].join('\n');
+    const ticketUrl = this.links?.create({
+      ticket: input.ticket,
+      source: 'bot_notification',
+      userId: input.user.id,
+      subscriptionId: input.subscription.id
+    }) ?? input.ticket.ticketLink;
     const result = await this.sendMessage({
       chatId: input.user.telegramChatId,
       text,
       parseMode: 'HTML',
       replyMarkup: {
-        inline_keyboard: [[{ text: '🎫 Посмотреть билет', url: input.ticket.ticketLink }]]
+        inline_keyboard: [[{ text: '🎫 Посмотреть билет', url: ticketUrl }]]
       }
     });
     return { telegramMessageId: result.messageId };

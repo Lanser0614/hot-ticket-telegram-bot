@@ -10,6 +10,7 @@ readonly DEPLOY_COMMAND='/usr/local/sbin/hot-ticket-deploy'
 readonly SUDOERS_FILE='/etc/sudoers.d/hot-ticket-deploy'
 readonly BOT_SERVICE='hot-ticket-bot.service'
 readonly ADMIN_SERVICE='hot-ticket-admin.service'
+readonly WEB_SERVICE='hot-ticket-web.service'
 readonly CADDY_SERVICE='caddy.service'
 
 DEPLOY_PUBLIC_KEY_FILE=''
@@ -209,6 +210,9 @@ printf '%s\n' \
 /usr/bin/install -o root -g root -m 644 \
   "$APP_DIRECTORY/deploy/systemd/hot-ticket-admin.service" \
   "/etc/systemd/system/$ADMIN_SERVICE"
+/usr/bin/install -o root -g root -m 644 \
+  "$APP_DIRECTORY/deploy/systemd/hot-ticket-web.service" \
+  "/etc/systemd/system/$WEB_SERVICE"
 
 /usr/bin/systemctl daemon-reload
 /usr/bin/systemctl enable ssh cron
@@ -272,6 +276,10 @@ if [[ "$START_SERVICES" == true ]]; then
   /usr/bin/systemctl enable "$BOT_SERVICE"
   /usr/bin/systemctl restart "$BOT_SERVICE"
   /usr/bin/systemctl is-active --quiet "$BOT_SERVICE"
+
+  /usr/bin/systemctl enable "$WEB_SERVICE"
+  /usr/bin/systemctl restart "$WEB_SERVICE"
+  /usr/bin/systemctl is-active --quiet "$WEB_SERVICE"
 
   if [[ "$ENABLE_ADMIN" == true ]]; then
     /usr/bin/systemctl enable "$ADMIN_SERVICE"
