@@ -57,7 +57,6 @@ interface RouterDependencies {
   sessions: SessionService;
   gateway: TelegramGateway;
   links?: TrackedLinkFactory;
-  miniAppUrl?: string | null;
 }
 
 function requirePayloadString(
@@ -258,7 +257,7 @@ export class TelegramBotRouter {
       await this.dependencies.gateway.sendMessage({
         chatId: message.chat.id,
         text: 'Главное меню',
-        replyMarkup: mainKeyboard(this.dependencies.miniAppUrl ?? null)
+        replyMarkup: mainKeyboard()
       });
       return;
     }

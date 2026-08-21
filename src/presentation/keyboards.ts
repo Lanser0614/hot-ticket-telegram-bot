@@ -1,10 +1,6 @@
-export function mainKeyboard(miniAppUrl: string | null = null): unknown {
-  const miniAppRow = miniAppUrl === null
-    ? []
-    : [[{ text: '✈️ Открыть Hot Ticket', web_app: { url: miniAppUrl } }]];
+export function mainKeyboard(): unknown {
   return {
     keyboard: [
-      ...miniAppRow,
       [{ text: '🔥 Горящие билеты' }],
       [{ text: '🔔 Мои уведомления' }, { text: '➕ Создать уведомление' }],
       [{ text: '⚙️ Настройки' }, { text: '👤 Профиль' }]

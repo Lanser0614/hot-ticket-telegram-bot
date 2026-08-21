@@ -60,10 +60,7 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     subscriptions: new SubscriptionService(repositories, repositories, clock),
     sessions: new SessionService(repositories, clock),
     gateway: telegram,
-    links,
-    miniAppUrl: config.tracking.publicBaseUrl === null
-      ? null
-      : new URL('/app/', config.tracking.publicBaseUrl).toString()
+    links
   });
   const provider = new AviasalesHotTicketsProvider(
     new AviasalesClient(new NativeTextHttpClient(fetch), sleeper, config.aviasales),
