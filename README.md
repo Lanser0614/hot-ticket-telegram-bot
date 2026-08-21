@@ -4,7 +4,7 @@ Hot Ticket — сервис поиска и отслеживания авиаб�
 
 Все компоненты работают с одной SQLite-базой. Каталог синхронизируется с Aviasales Explore API каждые 10 минут, а уведомления отправляются при появлении нового подходящего билета или снижении цены.
 
-Production: `https://ticket.crosfit.uz`
+Production URL задаётся переменной `PUBLIC_BASE_URL`, например `https://tickets.example.com`.
 
 Основная идея продукта:
 
@@ -220,7 +220,7 @@ sudo -u hotticket npm run verify
 Откройте [@BotFather](https://t.me/BotFather):
 
 1. `/mybots`;
-2. выберите `@hot_ticket_buy_bot`;
+2. выберите своего бота, например `@your_hot_ticket_bot`;
 3. нажмите `API Token`;
 4. скопируйте token.
 
@@ -236,7 +236,7 @@ sudoedit /etc/hot-ticket-bot.env
 Production-значения:
 
 ```dotenv
-TELEGRAM_BOT_TOKEN=вставьте-token-из-BotFather
+TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>
 DATABASE_PATH=/opt/hot-ticket-bot/data/hot-ticket-bot.sqlite
 BACKUP_DIRECTORY=/opt/hot-ticket-bot/backups
 AVIASALES_EXPLORE_BASE_URL=https://explore-api.aviasales.com
@@ -317,7 +317,7 @@ sudo journalctl -u cron -n 100 --no-pager
 
 ## 7. Проверка Telegram-бота
 
-Откройте `@hot_ticket_buy_bot` и отправьте:
+Откройте своего бота, например `@your_hot_ticket_bot`, и отправьте:
 
 ```text
 /start
@@ -419,8 +419,8 @@ sudo -u hotticket test -w /opt/hot-ticket-bot/data
 ```dotenv
 ADMIN_HOST=127.0.0.1
 ADMIN_PORT=8080
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=длинный-случайный-пароль
+ADMIN_USERNAME=<ADMIN_USERNAME>
+ADMIN_PASSWORD=<STRONG_RANDOM_PASSWORD>
 ```
 
 Systemd unit принудительно оставляет Node.js на `127.0.0.1:8080`, даже если в
@@ -434,15 +434,15 @@ Systemd unit принудительно оставляет Node.js на `127.0.0
 
 ## Telegram Mini App
 
-Mini App доступен по адресу `https://ticket.crosfit.uz/app/`. Он предоставляет Hot Deals с фильтрами и сортировками, детальную карточку билета, 7/30/90-дневную историю маршрута, Deal Score, Watchlist и настройки профиля. Интерфейс и бот используют одну SQLite, поэтому подписки и пользовательские настройки не дублируются. Web service предоставляет API под `/api/v1/*`, а `/go/*` записывает переход и перенаправляет пользователя на Aviasales.
+Mini App доступен по адресу `${PUBLIC_BASE_URL}/app/`, например `https://tickets.example.com/app/`. Он предоставляет Hot Deals с фильтрами и сортировками, детальную карточку билета, 7/30/90-дневную историю маршрута, Deal Score, Watchlist и настройки профиля. Интерфейс и бот используют одну SQLite, поэтому подписки и пользовательские настройки не дублируются. Web service предоставляет API под `/api/v1/*`, а `/go/*` записывает переход и перенаправляет пользователя на Aviasales.
 
 Добавьте в `/etc/hot-ticket-bot.env`:
 
 ```dotenv
-PUBLIC_BASE_URL=https://ticket.crosfit.uz
+PUBLIC_BASE_URL=https://tickets.example.com
 WEB_HOST=127.0.0.1
 WEB_PORT=8081
-CLICK_SIGNING_SECRET=сгенерированный-секрет-минимум-32-символа
+CLICK_SIGNING_SECRET=<RANDOM_SECRET_AT_LEAST_32_CHARACTERS>
 AFFILIATE_MARKER=
 AFFILIATE_LINK_TEMPLATE=https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}
 MINIAPP_AUTH_MAX_AGE_SECONDS=900
@@ -472,7 +472,7 @@ sudo systemctl status hot-ticket-web --no-pager
 ```
 
 Затем откройте `@BotFather`, выберите бота и настройте Menu Button с URL
-`https://ticket.crosfit.uz/app/`. Кнопка Mini App также появится в
+`${PUBLIC_BASE_URL}/app/`, например `https://tickets.example.com/app/`. Кнопка Mini App также появится в
 клавиатуре после `/start`, если `PUBLIC_BASE_URL` задан.
 
 Установите Caddy и конфигурацию повторным запуском bootstrap-скрипта:
@@ -494,10 +494,10 @@ sudo ufw allow 443/tcp
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 sudo systemctl status caddy hot-ticket-admin --no-pager
-curl -I http://ticket.crosfit.uz/
-curl -I https://ticket.crosfit.uz/admin/
+curl -I http://tickets.example.com/
+curl -I https://tickets.example.com/admin/
 ```
 
 Первый запрос должен перенаправляться на HTTPS, второй — отвечать `401` с
 заголовком `WWW-Authenticate`, пока логин и пароль не переданы. Liveness-проверка
-доступна без авторизации на `https://ticket.crosfit.uz/healthz`.
+доступна без авторизации на `${PUBLIC_BASE_URL}/healthz`.
