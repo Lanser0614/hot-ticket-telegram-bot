@@ -342,11 +342,16 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
   app.patch('/api/v1/me', asyncHandler(async (request, response) => {
     const telegramUserId = authenticatedUser(response);
     const body = request.body as Readonly<Record<string, unknown>>;
+    const languageCode = requiredBodyString(body.languageCode, 'languageCode');
+    if (languageCode !== 'ru' && languageCode !== 'uz') {
+      throw new ValidationError('Поддерживаются только русский и узбекский языки');
+    }
     const user = await dependencies.miniApp.updateProfile(
       telegramUserId,
       tripClass(body.preferredTripClass),
       bodyBoolean(body.baggageRequired),
-      requiredBodyString(body.defaultOriginCode, 'defaultOriginCode')
+      requiredBodyString(body.defaultOriginCode, 'defaultOriginCode'),
+      languageCode
     );
     response.json({
       telegramUserId: user.telegramUserId,

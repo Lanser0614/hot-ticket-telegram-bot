@@ -239,7 +239,8 @@ export class MiniAppService {
     telegramUserId: number,
     tripClass: TripClass,
     baggageRequired: boolean,
-    defaultOriginCode: string
+    defaultOriginCode: string,
+    languageCode: 'ru' | 'uz'
   ): Promise<User> {
     const user = await this.requireUser(telegramUserId);
     const originCode = normalizeIataCode(defaultOriginCode);
@@ -248,11 +249,13 @@ export class MiniAppService {
     }
     await this.users.updateTicketPreferences(user.id, tripClass, baggageRequired, this.clock.now());
     await this.users.updateDefaultOrigin(user.id, originCode, this.clock.now());
+    await this.users.updateLanguage(user.id, languageCode, this.clock.now());
     return {
       ...user,
       preferredTripClass: tripClass,
       baggageRequired,
-      defaultOriginCode: originCode
+      defaultOriginCode: originCode,
+      languageCode
     };
   }
 

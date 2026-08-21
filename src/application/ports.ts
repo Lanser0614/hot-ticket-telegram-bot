@@ -31,6 +31,7 @@ export interface UserRepository {
     now: Date
   ): Promise<void>;
   updateDefaultOrigin(userId: number, defaultOriginCode: string, now: Date): Promise<void>;
+  updateLanguage(userId: number, languageCode: string, now: Date): Promise<void>;
   updateTicketPreferences(
     userId: number,
     tripClass: TripClass,

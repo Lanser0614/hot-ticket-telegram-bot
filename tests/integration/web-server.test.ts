@@ -200,11 +200,17 @@ describe('Mini App web server', () => {
       body: JSON.stringify({
         preferredTripClass: 'economy',
         baggageRequired: false,
-        defaultOriginCode: 'BHK'
+        defaultOriginCode: 'BHK',
+        languageCode: 'ru'
       })
     });
     expect(profileUpdate.status).toBe(200);
-    await expect(profileUpdate.json()).resolves.toMatchObject({ defaultOriginCode: 'BHK' });
+    await expect(profileUpdate.json()).resolves.toMatchObject({
+      defaultOriginCode: 'BHK', languageCode: 'ru'
+    });
+    await expect(repositories.findByTelegramUserId(100)).resolves.toMatchObject({
+      defaultOriginCode: 'BHK', languageCode: 'ru'
+    });
 
     const invalid = await fetch(`${baseUrl}/api/v1/onboarding`, {
       method: 'POST',

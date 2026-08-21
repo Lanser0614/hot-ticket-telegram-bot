@@ -231,6 +231,12 @@ export class MemoryStore implements
     return Promise.resolve();
   }
 
+  public updateLanguage(userId: number, languageCode: string, now: Date): Promise<void> {
+    const user = this.users.find((item) => item.id === userId);
+    if (user !== undefined) Object.assign(user, { languageCode, updatedAt: now });
+    return Promise.resolve();
+  }
+
   public updateTicketPreferences(
     userId: number,
     preferredTripClass: TripClass,

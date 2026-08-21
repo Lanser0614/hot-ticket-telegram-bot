@@ -296,6 +296,13 @@ export class ApplicationRepositories implements
     });
   }
 
+  public async updateLanguage(userId: number, languageCode: string, now: Date): Promise<void> {
+    await this.db.run(`
+      UPDATE users SET language_code = :languageCode, updated_at = :now
+      WHERE id = :id
+    `, { ':languageCode': languageCode, ':now': seconds(now), ':id': userId });
+  }
+
   public async updateTicketPreferences(
     userId: number,
     preferredTripClass: TripClass,

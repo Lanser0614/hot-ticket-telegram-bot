@@ -769,6 +769,8 @@ function renderProfile() {
     <h1 style="margin-bottom:20px">${pick('Профиль', 'Profil')}</h1>
     <div class="profile-person"><div class="avatar">${escapeHtml(title.slice(0, 1).toUpperCase())}</div><div><div class="profile-name">${escapeHtml(title)}</div><div class="profile-source">${pick('Telegram-аккаунт', 'Telegram hisobi')}</div></div></div>
     <div class="panel settings-card"><div class="info-row"><span class="info-label">${pick('Город вылета', 'Uchish shahri')}</span><span class="info-value">${escapeHtml(originName(user.defaultOriginCode))}</span></div><div class="info-row"><span class="info-label">${pick('Валюта', 'Valyuta')}</span><span class="info-value">UZS</span></div></div>
+    <div class="section-label">${pick('Язык', 'Til')}</div>
+    <div class="segments"><button class="segment ${user.languageCode === 'uz' ? 'active' : ''}" type="button" data-profile-language="uz">🇺🇿 O‘zbekcha</button><button class="segment ${user.languageCode === 'ru' ? 'active' : ''}" type="button" data-profile-language="ru">🇷🇺 Русский</button></div>
     <div class="section-label">${pick('Город вылета', 'Uchish shahri')}</div>
     <div class="choice-list">${uzbekistanOrigins.map((code) => `<button class="choice ${user.defaultOriginCode === code ? 'active' : ''}" type="button" data-profile-origin="${code}">${escapeHtml(originName(code))}</button>`).join('')}</div>
     <div class="section-label">${pick('Класс перелёта', 'Parvoz klassi')}</div>
@@ -785,6 +787,10 @@ function renderProfile() {
     user.defaultOriginCode = button.dataset.profileOrigin;
     renderProfile();
   }));
+  document.querySelectorAll('[data-profile-language]').forEach((button) => button.addEventListener('click', () => {
+    user.languageCode = button.dataset.profileLanguage;
+    renderProfile();
+  }));
   document.querySelectorAll('[data-profile-baggage]').forEach((button) => button.addEventListener('click', () => {
     user.baggageRequired = button.dataset.profileBaggage === '1';
     renderProfile();
@@ -796,10 +802,17 @@ function renderProfile() {
         body: JSON.stringify({
           preferredTripClass: user.preferredTripClass,
           baggageRequired: user.baggageRequired,
-          defaultOriginCode: user.defaultOriginCode
+          defaultOriginCode: user.defaultOriginCode,
+          languageCode: user.languageCode
         })
       });
       haptic('medium');
+      if (state.profile.languageCode !== language) {
+        const nextUrl = new globalThis.URL(globalThis.location.href);
+        nextUrl.searchParams.set('lang', state.profile.languageCode);
+        globalThis.location.replace(nextUrl.toString());
+        return;
+      }
       showToast(pick('Настройки сохранены', 'Sozlamalar saqlandi'));
       renderProfile();
     } catch (error) {
