@@ -96,23 +96,57 @@ const startMessage = {
   text: '/start'
 };
 
+async function onboard(
+  fixture: ReturnType<typeof createFixture>,
+  language: 'ru' | 'uz' = 'ru',
+  originCode = 'TAS'
+): Promise<void> {
+  await fixture.router.handleMessage({
+    ...startMessage,
+    from: { ...startMessage.from, language_code: language }
+  });
+  await fixture.router.handleCallbackQuery({
+    id: `language-${language}`,
+    from: { id: 100 },
+    chatId: 200,
+    data: `onboarding:language:${language}`
+  });
+  await fixture.router.handleCallbackQuery({
+    id: `origin-${originCode}`,
+    from: { id: 100 },
+    chatId: 200,
+    data: `onboarding:origin:${language}:${originCode}`
+  });
+}
+
 describe('регистрация и профиль', () => {
   it('первый /start создаёт пользователя, повторный обновляет без дубликата', async () => {
     const fixture = createFixture();
     await fixture.router.handleMessage(startMessage);
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Выберите язык');
+    await fixture.router.handleCallbackQuery({
+      id: 'language-ru', from: { id: 100 }, chatId: 200, data: 'onboarding:language:ru'
+    });
+    expect(fixture.gateway.messages.at(-1)?.text).toBe('Выберите город вылета:');
+    expect(JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup)).toContain('Самарканд (SKD)');
+    await fixture.router.handleCallbackQuery({
+      id: 'origin-skd', from: { id: 100 }, chatId: 200, data: 'onboarding:origin:ru:SKD'
+    });
     await fixture.router.handleMessage({
       ...startMessage,
       from: { ...startMessage.from, first_name: 'Alisher' }
     });
 
     const user = await fixture.store.findByTelegramUserId(100);
-    expect(user).toMatchObject({ firstName: 'Alisher', telegramChatId: 200 });
+    expect(user).toMatchObject({
+      firstName: 'Alisher', telegramChatId: 200, defaultOriginCode: 'SKD', onboardingCompleted: true
+    });
     expect(fixture.gateway.messages.at(-1)?.text).toContain('Главное меню');
   });
 
   it('принимает только собственный контакт', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.router.handleMessage({
       chat: { id: 200 },
       from: startMessage.from,
@@ -128,19 +162,65 @@ describe('регистрация и профиль', () => {
     expect(fixture.gateway.messages.at(-1)?.text).toContain('чужой контакт');
     expect((await fixture.store.findByTelegramUserId(100))?.phoneNumber).toBe('+998901234567');
   });
+
+  it('показывает узбекское меню и принимает узбекские названия городов', async () => {
+    const fixture = createFixture();
+    const uzStartMessage = {
+      ...startMessage,
+      from: { ...startMessage.from, language_code: 'uz' }
+    };
+    await fixture.router.handleMessage(uzStartMessage);
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Tilni tanlang');
+    await fixture.router.handleCallbackQuery({
+      id: 'language-uz', from: { id: 100 }, chatId: 200, data: 'onboarding:language:uz'
+    });
+    await fixture.router.handleCallbackQuery({
+      id: 'origin-tas', from: { id: 100 }, chatId: 200, data: 'onboarding:origin:uz:TAS'
+    });
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Asosiy menyu');
+    expect(JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup)).toContain('Qaynoq chiptalar');
+
+    await fixture.store.upsert(createTicket({}), fixture.clock.now());
+    await fixture.router.handleMessage({ ...uzStartMessage, text: '🔥 Qaynoq chiptalar' });
+    expect(fixture.gateway.messages.at(-1)?.text)
+      .toBe('Uchish shahri: Toshkent (TAS). Qayerga uchamiz?');
+    expect(JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup))
+      .toContain('Barcha yo‘nalishlar');
+
+    await fixture.router.handleMessage({ ...uzStartMessage, text: 'Istanbul' });
+    expect(fixture.gateway.messages.at(-2)?.text)
+      .toContain('<b>Toshkent (TAS) → Istanbul (IST)</b>');
+    expect(fixture.gateway.messages.at(-1)?.text).toBe('Ko‘rsatildi 1–1');
+  });
 });
 
 describe('билеты и настройки', () => {
+  it('использует выбранный город Узбекистана как origin каталога', async () => {
+    const fixture = createFixture();
+    await onboard(fixture, 'ru', 'SKD');
+    await fixture.store.upsert(createTicket({
+      externalKey: 'skd-ist',
+      originCode: 'SKD',
+      destinationCode: 'IST'
+    }), fixture.clock.now());
+
+    await fixture.router.handleMessage({ ...startMessage, text: '/tickets IST' });
+
+    expect(fixture.gateway.messages.some((item) => (
+      item.text.includes('Самарканд (SKD) → Стамбул (IST)')
+    ))).toBe(true);
+  });
+
   it('запрашивает направление и принимает русское название', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.store.upsert(createTicket({}), fixture.clock.now());
 
     await fixture.router.handleMessage({ ...startMessage, text: '🔥 Горящие билеты' });
     expect(fixture.gateway.messages.at(-1)?.text)
-      .toBe('Вылет из Ташкента (TAS). Куда летим?');
+      .toBe('Город вылета: Ташкент (TAS). Куда летим?');
     expect(JSON.stringify(fixture.gateway.messages.at(-1)?.replyMarkup))
-      .toContain('Все направления из Ташкента');
+      .toContain('Все направления');
     await fixture.router.handleMessage({ ...startMessage, text: 'Стамбул' });
 
     expect(fixture.gateway.messages.at(-2)?.text)
@@ -150,7 +230,7 @@ describe('билеты и настройки', () => {
 
   it('делит доступные города на локальные и международные вкладки', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.store.upsert(createTicket({ externalKey: 'k-ist', destinationCode: 'IST' }), fixture.clock.now());
     await fixture.store.upsert(createTicket({ externalKey: 'k-dxb', destinationCode: 'DXB' }), fixture.clock.now());
     await fixture.store.upsert(createTicket({ externalKey: 'k-skd', destinationCode: 'SKD' }), fixture.clock.now());
@@ -197,7 +277,7 @@ describe('билеты и настройки', () => {
 
   it('сообщает о пустой вкладке, если рейсов нет', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.store.upsert(createTicket({ externalKey: 'k-ist', destinationCode: 'IST' }), fixture.clock.now());
 
     await fixture.router.handleCallbackQuery({
@@ -214,7 +294,7 @@ describe('билеты и настройки', () => {
 
   it('открывает /tickets IST без вопроса и безопасно обрабатывает неизвестный город', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.store.upsert(createTicket({}), fixture.clock.now());
 
     await fixture.router.handleMessage({ ...startMessage, text: '/tickets IST' });
@@ -228,7 +308,7 @@ describe('билеты и настройки', () => {
 
   it('сортирует и фильтрует активные билеты', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.store.upsert(createTicket({ price: 2_000_000, departureDate: '2026-09-20' }), fixture.clock.now());
     await fixture.store.upsert(createTicket({
       externalKey: 'key-dxb',
@@ -249,15 +329,22 @@ describe('билеты и настройки', () => {
 
   it('обновляет класс и багаж через settings flow', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.router.handleMessage({ ...startMessage, text: '/settings' });
+    expect(fixture.gateway.messages.at(-1)?.text).toContain('Выберите город вылета');
+    await fixture.router.handleCallbackQuery({
+      id: 'settings-origin-skd',
+      from: { id: 100 },
+      chatId: 200,
+      data: 'settings:origin:SKD'
+    });
     expect(fixture.gateway.messages.at(-1)?.text).toContain('Класс перелёта');
     await fixture.router.handleMessage({ ...startMessage, text: 'Бизнес' });
     await fixture.router.handleMessage({ ...startMessage, text: 'Только с багажом' });
 
     expect(await fixture.store.findByTelegramUserId(100)).toMatchObject({
-      defaultOriginCode: 'TAS',
       preferredCurrencyCode: 'UZS',
+      defaultOriginCode: 'SKD',
       preferredTripClass: 'business',
       baggageRequired: true
     });
@@ -265,7 +352,7 @@ describe('билеты и настройки', () => {
 
   it('показывает фиксированные TAS/UZS и текущие фильтры в профиле', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.users.updateTicketPreferences(100, 'business', true);
     await fixture.router.handleMessage({ ...startMessage, text: '/profile' });
 
@@ -277,7 +364,7 @@ describe('билеты и настройки', () => {
 
   it('открывает следующую страницу callback-ом текущего пользователя', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     for (let index = 1; index <= 11; index += 1) {
       await fixture.store.upsert(createTicket({
         externalKey: `ticket-${index}`,
@@ -304,7 +391,7 @@ describe('билеты и настройки', () => {
 describe('подписки и сессии', () => {
   it('создаёт подписку через последовательный flow', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     for (const text of [
       '/new_subscription',
       'Стамбул',
@@ -333,7 +420,7 @@ describe('подписки и сессии', () => {
 
   it('отбрасывает просроченную сессию через 30 минут', async () => {
     const fixture = createFixture();
-    await fixture.router.handleMessage(startMessage);
+    await onboard(fixture);
     await fixture.router.handleMessage({ ...startMessage, text: '/new_subscription' });
     fixture.clock.advance(31 * 60 * 1_000);
     await fixture.router.handleMessage({ ...startMessage, text: 'TAS' });

@@ -4,8 +4,9 @@ import type {
   TelegramMessageInput
 } from '../../application/models.js';
 import type { TelegramGateway, TicketNotifier, TrackedLinkFactory } from '../../application/ports.js';
-import { formatLocationLabel } from '../../domain/locations.js';
+import { formatLocalizedLocationLabel } from '../../domain/locations.js';
 import { presentTripClass } from '../../domain/travel-preferences.js';
+import { languageFromCode, localeForLanguage, message } from '../../presentation/language.js';
 import {
   parseTelegramUpdate,
   parseTelegramUpdateId,
@@ -85,18 +86,20 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
   }
 
   public async send(input: NotificationInput): Promise<{ telegramMessageId: number }> {
+    const language = languageFromCode(input.user.languageCode);
+    const uz = language === 'uz';
     const title = input.type === 'new_ticket'
-      ? '🔥 <b>Найден новый горячий билет!</b>'
-      : '📉 <b>Цена билета снизилась!</b>';
+      ? (uz ? '🔥 <b>Yangi qaynoq chipta topildi!</b>' : '🔥 <b>Найден новый горячий билет!</b>')
+      : (uz ? '📉 <b>Chipta narxi tushdi!</b>' : '📉 <b>Цена билета снизилась!</b>');
     const text = [
       title,
       '',
-      `✈️ ${escapeHtml(formatLocationLabel(input.ticket.originCode))} → ${escapeHtml(formatLocationLabel(input.ticket.destinationCode))}`,
-      `📅 Вылет: ${escapeHtml(input.ticket.departureDate)}`,
-      `💰 Цена: ${new Intl.NumberFormat('ru-RU').format(input.ticket.price)} ${escapeHtml(input.ticket.currencyCode)}`,
-      `🛫 ${input.ticket.isDirect ? 'Прямой рейс' : 'С пересадкой'}`,
-      `💺 ${presentTripClass(input.ticket.tripClass)}`,
-      `🧳 ${input.ticket.hasBaggage ? 'С багажом' : 'Без багажа'}`
+      `✈️ ${escapeHtml(formatLocalizedLocationLabel(input.ticket.originCode, language))} → ${escapeHtml(formatLocalizedLocationLabel(input.ticket.destinationCode, language))}`,
+      `📅 ${uz ? 'Uchish' : 'Вылет'}: ${escapeHtml(input.ticket.departureDate)}`,
+      `💰 ${uz ? 'Narx' : 'Цена'}: ${new Intl.NumberFormat(localeForLanguage(language)).format(input.ticket.price)} ${escapeHtml(input.ticket.currencyCode)}`,
+      `🛫 ${input.ticket.isDirect ? (uz ? 'To‘g‘ridan-to‘g‘ri reys' : 'Прямой рейс') : (uz ? 'Almashib' : 'С пересадкой')}`,
+      `💺 ${uz ? (input.ticket.tripClass === 'economy' ? 'Ekonom' : 'Biznes') : presentTripClass(input.ticket.tripClass)}`,
+      `🧳 ${input.ticket.hasBaggage ? (uz ? 'Bagaj bilan' : 'С багажом') : (uz ? 'Bagajsiz' : 'Без багажа')}`
     ].join('\n');
     const ticketUrl = this.links?.create({
       ticket: input.ticket,
@@ -109,7 +112,7 @@ export class TelegramBotApiClient implements TelegramGateway, TicketNotifier {
       text,
       parseMode: 'HTML',
       replyMarkup: {
-        inline_keyboard: [[{ text: '🎫 Посмотреть билет', url: ticketUrl }]]
+        inline_keyboard: [[{ text: message(language, 'viewTicket'), url: ticketUrl }]]
       }
     });
     return { telegramMessageId: result.messageId };

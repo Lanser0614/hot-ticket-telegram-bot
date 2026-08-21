@@ -20,6 +20,44 @@ export type LocationResolution =
 
 const LOCATIONS = IATA_LOCATIONS_RU as Readonly<Record<string, LocationRecord | undefined>>;
 const IATA_CODE_PATTERN = /^[A-Z0-9]{3}$/u;
+const UZBEK_LOCATION_NAMES: Readonly<Record<string, string>> = {
+  TAS: 'Toshkent',
+  IST: 'Istanbul',
+  DXB: 'Dubay',
+  ALA: 'Olmaota',
+  SKD: 'Samarqand',
+  BHK: 'Buxoro',
+  FEG: 'Farg‘ona',
+  NMA: 'Namangan',
+  NCU: 'Nukus',
+  UGC: 'Urganch',
+  TMJ: 'Termiz',
+  KSQ: 'Qarshi',
+  AZN: 'Andijon',
+  NVI: 'Navoiy'
+};
+
+export const UZBEKISTAN_ORIGIN_CODES = [
+  'TAS', 'SKD', 'BHK', 'FEG', 'NMA', 'NCU', 'UGC', 'TMJ', 'KSQ', 'AZN', 'NVI'
+] as const;
+
+export function isUzbekistanOrigin(code: string): boolean {
+  return (UZBEKISTAN_ORIGIN_CODES as readonly string[]).includes(code.trim().toUpperCase());
+}
+
+const CYRILLIC_TO_LATIN: Readonly<Record<string, string>> = {
+  А: 'A', а: 'a', Б: 'B', б: 'b', В: 'V', в: 'v', Г: 'G', г: 'g', Д: 'D', д: 'd',
+  Е: 'E', е: 'e', Ё: 'Yo', ё: 'yo', Ж: 'J', ж: 'j', З: 'Z', з: 'z', И: 'I', и: 'i',
+  Й: 'Y', й: 'y', К: 'K', к: 'k', Л: 'L', л: 'l', М: 'M', м: 'm', Н: 'N', н: 'n',
+  О: 'O', о: 'o', П: 'P', п: 'p', Р: 'R', р: 'r', С: 'S', с: 's', Т: 'T', т: 't',
+  У: 'U', у: 'u', Ф: 'F', ф: 'f', Х: 'X', х: 'x', Ц: 'Ts', ц: 'ts', Ч: 'Ch', ч: 'ch',
+  Ш: 'Sh', ш: 'sh', Щ: 'Shch', щ: 'shch', Ъ: '', ъ: '', Ы: 'I', ы: 'i', Ь: '', ь: '',
+  Э: 'E', э: 'e', Ю: 'Yu', ю: 'yu', Я: 'Ya', я: 'ya'
+};
+
+function transliterateRussian(value: string): string {
+  return [...value].map((character) => CYRILLIC_TO_LATIN[character] ?? character).join('');
+}
 
 function normalizeSearchText(value: string): string {
   return value.trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ru-RU').replaceAll('ё', 'е');
@@ -41,10 +79,21 @@ for (const location of Object.values(LOCATIONS)) {
   if (normalizeSearchText(location.cityName) !== normalizeSearchText(location.name)) {
     addNameIndex(location.cityName, location);
   }
+  addNameIndex(transliterateRussian(location.name), location);
+  addNameIndex(transliterateRussian(location.cityName), location);
+  const uzbekName = UZBEK_LOCATION_NAMES[location.code];
+  if (uzbekName !== undefined) addNameIndex(uzbekName, location);
 }
 
 export function getLocationName(code: string): string | null {
   return LOCATIONS[code.trim().toUpperCase()]?.name ?? null;
+}
+
+export function getLocalizedLocationName(code: string, language: 'ru' | 'uz'): string | null {
+  const normalizedCode = code.trim().toUpperCase();
+  const name = getLocationName(normalizedCode);
+  if (name === null || language === 'ru') return name;
+  return UZBEK_LOCATION_NAMES[normalizedCode] ?? transliterateRussian(name);
 }
 
 export function getLocationCountryCode(code: string): string | null {
@@ -54,6 +103,12 @@ export function getLocationCountryCode(code: string): string | null {
 export function formatLocationLabel(code: string): string {
   const normalizedCode = code.trim().toUpperCase();
   const name = getLocationName(normalizedCode);
+  return name === null ? normalizedCode : `${name} (${normalizedCode})`;
+}
+
+export function formatLocalizedLocationLabel(code: string, language: 'ru' | 'uz'): string {
+  const normalizedCode = code.trim().toUpperCase();
+  const name = getLocalizedLocationName(normalizedCode, language);
   return name === null ? normalizedCode : `${name} (${normalizedCode})`;
 }
 

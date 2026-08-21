@@ -72,11 +72,11 @@ describe('VDS production composition', () => {
     await runtime.ensureInitialSource();
     const result = await runtime.syncJob.execute();
 
-    expect(result).toEqual({ processedSources: 1 });
+    expect(result).toEqual({ processedSources: 11 });
     expect(await runtime.database.get('SELECT count(*) AS count FROM users')).toEqual({ count: 1 });
     const ticketCount = await runtime.database.get('SELECT count(*) AS count FROM tickets');
     expect(Number(ticketCount?.count)).toBeGreaterThan(0);
-    expect(await runtime.database.get('SELECT count(*) AS count FROM sync_runs')).toEqual({ count: 1 });
+    expect(await runtime.database.get('SELECT count(*) AS count FROM sync_runs')).toEqual({ count: 11 });
     expect(telegramMethods).toContain('sendMessage');
     runtime.close();
   });

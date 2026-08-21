@@ -30,6 +30,7 @@ import type { TripClass } from '../../domain/travel-preferences.js';
 import type { RouteDailyPoint, RoutePriceObservation } from '../../domain/route-price.js';
 import { dateInTimeZone } from '../../domain/dates.js';
 import type { ClickSource, UserAgentKind } from '../../domain/click-tracking.js';
+import { UZBEKISTAN_ORIGIN_CODES } from '../../domain/locations.js';
 
 type Row = Readonly<Record<string, unknown>>;
 type Parameters = Readonly<Record<string, unknown>>;
@@ -110,6 +111,7 @@ function mapUser(row: Row): User {
     preferredCurrencyCode: requiredString(row, 'preferred_currency_code'),
     preferredTripClass: tripClass(row, 'preferred_trip_class'),
     baggageRequired: bool(row, 'baggage_required'),
+    onboardingCompleted: bool(row, 'onboarding_completed'),
     isActive: bool(row, 'is_active'),
     createdAt: timestamp(row, 'created_at'),
     updatedAt: timestamp(row, 'updated_at')
@@ -210,17 +212,20 @@ export class ApplicationRepositories implements
     const row = await this.db.get(`
       INSERT INTO users (
         telegram_user_id, telegram_chat_id, username, first_name, last_name,
-        language_code, created_at, updated_at
+        language_code, onboarding_completed, created_at, updated_at
       ) VALUES (
         :telegramUserId, :telegramChatId, :username, :firstName, :lastName,
-        :languageCode, :now, :now
+        :languageCode, 0, :now, :now
       )
       ON CONFLICT(telegram_user_id) DO UPDATE SET
         telegram_chat_id = excluded.telegram_chat_id,
         username = excluded.username,
         first_name = excluded.first_name,
         last_name = excluded.last_name,
-        language_code = excluded.language_code,
+        language_code = CASE
+          WHEN users.onboarding_completed = 1 THEN users.language_code
+          ELSE excluded.language_code
+        END,
         updated_at = excluded.updated_at
       RETURNING *
     `, {
@@ -254,6 +259,41 @@ export class ApplicationRepositories implements
       'UPDATE users SET phone_number = :phone, updated_at = :now WHERE id = :id',
       { ':phone': phoneNumber, ':now': seconds(now), ':id': userId }
     );
+  }
+
+  public async completeOnboarding(
+    userId: number,
+    languageCode: string,
+    defaultOriginCode: string,
+    now: Date
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE users SET language_code = :languageCode,
+        default_origin_code = :defaultOriginCode,
+        onboarding_completed = 1,
+        updated_at = :now
+      WHERE id = :id
+    `, {
+      ':languageCode': languageCode,
+      ':defaultOriginCode': defaultOriginCode,
+      ':now': seconds(now),
+      ':id': userId
+    });
+  }
+
+  public async updateDefaultOrigin(
+    userId: number,
+    defaultOriginCode: string,
+    now: Date
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE users SET default_origin_code = :defaultOriginCode, updated_at = :now
+      WHERE id = :id
+    `, {
+      ':defaultOriginCode': defaultOriginCode,
+      ':now': seconds(now),
+      ':id': userId
+    });
   }
 
   public async updateTicketPreferences(
@@ -823,16 +863,18 @@ export class ApplicationRepositories implements
   }
 
   public async ensureInitialSource(now: Date): Promise<void> {
-    await this.db.run(`
-      UPDATE sync_sources SET is_enabled = 0, updated_at = :now
-      WHERE origin_code <> 'TAS' OR currency_code <> 'UZS'
-    `, { ':now': seconds(now) });
-    await this.db.run(`
-      INSERT INTO sync_sources (origin_code, currency_code, is_enabled, created_at, updated_at)
-      VALUES ('TAS', 'UZS', 1, :now, :now)
-      ON CONFLICT(origin_code, currency_code) DO UPDATE SET
-        is_enabled = 1, updated_at = excluded.updated_at
-    `, { ':now': seconds(now) });
+    await this.db.run(
+      'UPDATE sync_sources SET is_enabled = 0, updated_at = :now',
+      { ':now': seconds(now) }
+    );
+    for (const originCode of UZBEKISTAN_ORIGIN_CODES) {
+      await this.db.run(`
+        INSERT INTO sync_sources (origin_code, currency_code, is_enabled, created_at, updated_at)
+        VALUES (:originCode, 'UZS', 1, :now, :now)
+        ON CONFLICT(origin_code, currency_code) DO UPDATE SET
+          is_enabled = 1, updated_at = excluded.updated_at
+      `, { ':originCode': originCode, ':now': seconds(now) });
+    }
   }
 
   public async start(source: SyncSourceKey, startedAt: Date): Promise<number> {

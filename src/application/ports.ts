@@ -24,6 +24,13 @@ export interface UserRepository {
   findById(userId: number): Promise<User | null>;
   findByTelegramUserId(telegramUserId: number): Promise<User | null>;
   updatePhone(userId: number, phoneNumber: string, now: Date): Promise<void>;
+  completeOnboarding(
+    userId: number,
+    languageCode: string,
+    defaultOriginCode: string,
+    now: Date
+  ): Promise<void>;
+  updateDefaultOrigin(userId: number, defaultOriginCode: string, now: Date): Promise<void>;
   updateTicketPreferences(
     userId: number,
     tripClass: TripClass,

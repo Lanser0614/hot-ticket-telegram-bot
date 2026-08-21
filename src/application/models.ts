@@ -16,6 +16,7 @@ export interface User {
   preferredCurrencyCode: string;
   preferredTripClass: TripClass;
   baggageRequired: boolean;
+  onboardingCompleted: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;

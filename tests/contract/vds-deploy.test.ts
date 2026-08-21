@@ -52,12 +52,12 @@ describe('VDS deploy files', () => {
     expect(readme).toContain('sudo apt install -y nodejs');
   });
 
-  it('описывает фиксированный каталог и локальный sync', () => {
+  it('описывает каталог Узбекистана и локальный sync', () => {
     const readme = readFileSync('README.md', 'utf8');
-    expect(readme).toContain('Ташкент (TAS)');
-    expect(readme).toContain('origin=TAS&currency=uzs');
+    expect(readme).toContain('городов Узбекистана');
+    expect(readme).toContain('`TAS`, `SKD`, `BHK`');
     expect(readme).toContain('/tickets IST');
-    expect(readme).toContain('Все направления из Ташкента');
+    expect(readme).toContain('Все направления');
     expect(readme).toContain('cron');
     expect(readme).toContain('внешний cron-сервис не нужны');
   });

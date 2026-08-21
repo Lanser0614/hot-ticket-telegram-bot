@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatLocalizedLocationLabel,
   formatLocationLabel,
+  getLocationCountryCode,
+  getLocalizedLocationName,
   getLocationName,
-  resolveLocation
+  resolveLocation,
+  UZBEKISTAN_ORIGIN_CODES
 } from '../../../src/domain/locations.js';
 
 describe('русский справочник локаций', () => {
@@ -44,5 +48,21 @@ describe('русский справочник локаций', () => {
 
   it('не выдаёт внутренние кириллические транспортные коды как IATA', () => {
     expect(resolveLocation('ТАШ')).toEqual({ kind: 'not_found' });
+  });
+
+  it('локализует города и разрешает узбекские названия', () => {
+    expect(getLocalizedLocationName('TAS', 'uz')).toBe('Toshkent');
+    expect(formatLocalizedLocationLabel('SKD', 'uz')).toBe('Samarqand (SKD)');
+    expect(formatLocalizedLocationLabel('IST', 'uz')).toBe('Istanbul (IST)');
+    expect(resolveLocation('Toshkent')).toEqual({ kind: 'resolved', code: 'TAS' });
+    expect(resolveLocation('Samarqand')).toEqual({ kind: 'resolved', code: 'SKD' });
+    expect(resolveLocation('Istanbul')).toEqual({ kind: 'resolved', code: 'IST' });
+  });
+
+  it('предлагает как origin только аэропорты Узбекистана', () => {
+    expect(UZBEKISTAN_ORIGIN_CODES).toHaveLength(11);
+    for (const code of UZBEKISTAN_ORIGIN_CODES) {
+      expect(getLocationCountryCode(code)).toBe('UZ');
+    }
   });
 });

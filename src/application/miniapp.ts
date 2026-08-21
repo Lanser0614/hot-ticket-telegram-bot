@@ -11,15 +11,11 @@ import { calculateDealScore, type DealScore } from '../domain/deal-score.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { assertIsoDate, dateInTimeZone } from '../domain/dates.js';
 import { ValidationError } from '../domain/errors.js';
-import { getLocationName } from '../domain/locations.js';
+import { getLocalizedLocationName, isUzbekistanOrigin } from '../domain/locations.js';
 import { assertMoney } from '../domain/money.js';
 import { createRouteKey, type RouteDailyPoint } from '../domain/route-price.js';
 import type { Subscription } from '../domain/subscription.js';
 import type { TripClass } from '../domain/travel-preferences.js';
-import {
-  DEFAULT_CURRENCY_CODE,
-  DEFAULT_ORIGIN_CODE
-} from '../domain/travel-preferences.js';
 
 export type MiniAppDealSort = 'best' | 'cheapest' | 'recent' | 'departing_soon';
 
@@ -83,6 +79,10 @@ function repositorySort(sort: MiniAppDealSort): TicketSort {
   return 'price_asc';
 }
 
+function userLanguage(languageCode: string | null): 'ru' | 'uz' {
+  return languageCode?.toLocaleLowerCase('en-US').startsWith('uz') === true ? 'uz' : 'ru';
+}
+
 function scoreOrder(left: MiniAppTicketView, right: MiniAppTicketView): number {
   return (right.dealScore.percentile ?? -1) - (left.dealScore.percentile ?? -1)
     || left.price - right.price
@@ -121,8 +121,8 @@ export class MiniAppService {
       ? Math.min(500, Math.max(100, offset + input.limit + 1))
       : input.limit + 1;
     const rows = await this.tickets.listActive({
-      originCode: DEFAULT_ORIGIN_CODE,
-      currencyCode: DEFAULT_CURRENCY_CODE,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
       departureDateFrom,
       departureDateTo: input.departureDateTo === null
         ? null
@@ -137,7 +137,7 @@ export class MiniAppService {
       offset: input.sort === 'best' ? 0 : offset
     });
     const decorated = await Promise.all(rows.map((ticket) => (
-      this.ticketView(ticket, user.id, 'miniapp_deals', 30)
+      this.ticketView(ticket, user.id, 'miniapp_deals', 30, userLanguage(user.languageCode))
     )));
     if (input.sort === 'best') decorated.sort(scoreOrder);
     const page = input.sort === 'best'
@@ -154,7 +154,7 @@ export class MiniAppService {
     const user = await this.requireUser(telegramUserId);
     const ticket = await this.tickets.findTicketById(ticketId);
     if (ticket === null || !ticket.isActive) throw new ValidationError('Билет не найден');
-    return this.ticketView(ticket, user.id, 'miniapp_card', 30);
+    return this.ticketView(ticket, user.id, 'miniapp_card', 30, userLanguage(user.languageCode));
   }
 
   public async getHistory(
@@ -179,13 +179,14 @@ export class MiniAppService {
   }[]> {
     const user = await this.requireUser(telegramUserId);
     const codes = await this.tickets.listActiveDestinations({
-      originCode: DEFAULT_ORIGIN_CODE,
-      currencyCode: DEFAULT_CURRENCY_CODE,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
       departureDateFrom: dateInTimeZone(this.clock.now(), 'Asia/Tashkent'),
       tripClass: user.preferredTripClass,
       baggageRequired: user.baggageRequired
     });
-    return codes.map((code) => ({ code, name: getLocationName(code) ?? code }));
+    const language = userLanguage(user.languageCode);
+    return codes.map((code) => ({ code, name: getLocalizedLocationName(code, language) ?? code }));
   }
 
   public async listSubscriptions(telegramUserId: number): Promise<readonly Subscription[]> {
@@ -213,30 +214,63 @@ export class MiniAppService {
     return this.requireUser(telegramUserId);
   }
 
+  public async completeOnboarding(
+    telegramUserId: number,
+    languageCode: 'ru' | 'uz',
+    defaultOriginCode: string
+  ): Promise<User> {
+    const user = await this.requireUser(telegramUserId);
+    const originCode = normalizeIataCode(defaultOriginCode);
+    if (!isUzbekistanOrigin(originCode)) {
+      throw new ValidationError('Город вылета должен находиться в Узбекистане');
+    }
+    const now = this.clock.now();
+    await this.users.completeOnboarding(user.id, languageCode, originCode, now);
+    return {
+      ...user,
+      languageCode,
+      defaultOriginCode: originCode,
+      onboardingCompleted: true,
+      updatedAt: now
+    };
+  }
+
   public async updateProfile(
     telegramUserId: number,
     tripClass: TripClass,
-    baggageRequired: boolean
+    baggageRequired: boolean,
+    defaultOriginCode: string
   ): Promise<User> {
     const user = await this.requireUser(telegramUserId);
+    const originCode = normalizeIataCode(defaultOriginCode);
+    if (!isUzbekistanOrigin(originCode)) {
+      throw new ValidationError('Город вылета должен находиться в Узбекистане');
+    }
     await this.users.updateTicketPreferences(user.id, tripClass, baggageRequired, this.clock.now());
-    return { ...user, preferredTripClass: tripClass, baggageRequired };
+    await this.users.updateDefaultOrigin(user.id, originCode, this.clock.now());
+    return {
+      ...user,
+      preferredTripClass: tripClass,
+      baggageRequired,
+      defaultOriginCode: originCode
+    };
   }
 
   private async ticketView(
     ticket: StoredTicket,
     userId: number,
     source: 'miniapp_deals' | 'miniapp_card',
-    historyDays: number
+    historyDays: number,
+    language: 'ru' | 'uz'
   ): Promise<MiniAppTicketView> {
     const routeKey = createRouteKey(ticket.originCode, ticket.destinationCode, ticket.tripClass);
     const history = await this.routePrices.getDailySeries(routeKey, historyDays, this.clock.now());
     return {
       id: ticket.id,
       originCode: ticket.originCode,
-      originName: getLocationName(ticket.originCode) ?? ticket.originCode,
+      originName: getLocalizedLocationName(ticket.originCode, language) ?? ticket.originCode,
       destinationCode: ticket.destinationCode,
-      destinationName: getLocationName(ticket.destinationCode) ?? ticket.destinationCode,
+      destinationName: getLocalizedLocationName(ticket.destinationCode, language) ?? ticket.destinationCode,
       departureDate: ticket.departureDate,
       returnDate: ticket.returnDate,
       price: ticket.price,

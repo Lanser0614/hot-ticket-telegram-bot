@@ -6,10 +6,6 @@ import {
   type SubscriptionDraft
 } from '../domain/subscription.js';
 import { ValidationError } from '../domain/errors.js';
-import {
-  DEFAULT_CURRENCY_CODE,
-  DEFAULT_ORIGIN_CODE
-} from '../domain/travel-preferences.js';
 
 export type CreateSubscriptionInput = Pick<
   SubscriptionDraft,
@@ -35,11 +31,13 @@ export class SubscriptionService {
     if (await this.subscriptions.countActiveByUser(userId) >= 20) {
       throw new ValidationError('Достигнут лимит 20 активных подписок');
     }
+    const user = await this.users.findById(userId);
+    if (user === null) throw new ValidationError('Пользователь не найден');
     return this.subscriptions.create(validateSubscriptionDraft({
       ...input,
       userId,
-      originCode: DEFAULT_ORIGIN_CODE,
-      currencyCode: DEFAULT_CURRENCY_CODE,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
       baggageRequired: input.baggageRequired ?? false
     }), this.clock.now());
   }

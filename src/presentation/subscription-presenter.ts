@@ -1,19 +1,25 @@
 import type { Subscription } from '../domain/subscription.js';
-import { formatLocationLabel } from '../domain/locations.js';
+import { formatLocalizedLocationLabel } from '../domain/locations.js';
+import type { AppLanguage } from './language.js';
+import { localeForLanguage } from './language.js';
 
-export function presentSubscription(subscription: Subscription): string {
+export function presentSubscription(
+  subscription: Subscription,
+  language: AppLanguage = 'ru'
+): string {
+  const uz = language === 'uz';
   const destination = subscription.destinationCode === null
-    ? 'любое направление'
-    : formatLocationLabel(subscription.destinationCode);
+    ? (uz ? 'istalgan yo‘nalish' : 'любое направление')
+    : formatLocalizedLocationLabel(subscription.destinationCode, language);
   const price = subscription.maxPrice === null
-    ? 'без ограничения'
-    : `${new Intl.NumberFormat('ru-RU').format(subscription.maxPrice)} ${subscription.currencyCode}`;
+    ? (uz ? 'cheklovsiz' : 'без ограничения')
+    : `${new Intl.NumberFormat(localeForLanguage(language)).format(subscription.maxPrice)} ${subscription.currencyCode}`;
   return [
-    `🔔 ${formatLocationLabel(subscription.originCode)} → ${destination}`,
-    `Период: ${subscription.departureDateFrom}–${subscription.departureDateTo}`,
-    `Максимальная цена: ${price}`,
-    `Рейс: ${subscription.directOnly ? 'только прямой' : 'любой'}`,
-    `Билет: ${subscription.roundTripOnly ? 'только туда-обратно' : 'любой'}`,
-    `Статус: ${subscription.isActive ? 'активна' : 'отключена'}`
+    `🔔 ${formatLocalizedLocationLabel(subscription.originCode, language)} → ${destination}`,
+    `${uz ? 'Davr' : 'Период'}: ${subscription.departureDateFrom}–${subscription.departureDateTo}`,
+    `${uz ? 'Eng yuqori narx' : 'Максимальная цена'}: ${price}`,
+    `${uz ? 'Reys' : 'Рейс'}: ${subscription.directOnly ? (uz ? 'faqat to‘g‘ridan-to‘g‘ri' : 'только прямой') : (uz ? 'istalgan' : 'любой')}`,
+    `${uz ? 'Chipta' : 'Билет'}: ${subscription.roundTripOnly ? (uz ? 'faqat borib-kelish' : 'только туда-обратно') : (uz ? 'istalgan' : 'любой')}`,
+    `${uz ? 'Holat' : 'Статус'}: ${subscription.isActive ? (uz ? 'faol' : 'активна') : (uz ? 'o‘chirilgan' : 'отключена')}`
   ].join('\n');
 }

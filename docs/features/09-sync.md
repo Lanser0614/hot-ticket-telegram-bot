@@ -9,14 +9,14 @@ Sync запускается:
 - кнопкой в админке;
 - вручную через `npm run sync` или `dist/entries/sync.js`.
 
-Активный источник создаётся автоматически и зафиксирован как `TAS/UZS`.
+Активные источники `UZS` автоматически создаются для поддерживаемых городов Узбекистана.
 
 ## Запрос к Aviasales
 
 Используется endpoint:
 
 ```text
-/v1/hot_offers/list.json?origin=TAS&currency=uzs
+/v1/hot_offers/list.json?origin={UZBEKISTAN_ORIGIN}&currency=uzs
 ```
 
 Конфигурация рынка фиксирована:

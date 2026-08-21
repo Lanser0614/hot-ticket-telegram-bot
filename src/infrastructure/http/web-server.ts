@@ -307,6 +307,33 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
       telegramUserId: user.telegramUserId,
       firstName: user.firstName,
       username: user.username,
+      languageCode: user.languageCode,
+      defaultOriginCode: user.defaultOriginCode,
+      onboardingCompleted: user.onboardingCompleted,
+      preferredTripClass: user.preferredTripClass,
+      baggageRequired: user.baggageRequired
+    });
+  }));
+
+  app.post('/api/v1/onboarding', asyncHandler(async (request, response) => {
+    const telegramUserId = authenticatedUser(response);
+    const body = request.body as Readonly<Record<string, unknown>>;
+    const languageCode = requiredBodyString(body.languageCode, 'languageCode');
+    if (languageCode !== 'ru' && languageCode !== 'uz') {
+      throw new ValidationError('Поддерживаются только русский и узбекский языки');
+    }
+    const user = await dependencies.miniApp.completeOnboarding(
+      telegramUserId,
+      languageCode,
+      requiredBodyString(body.defaultOriginCode, 'defaultOriginCode')
+    );
+    response.json({
+      telegramUserId: user.telegramUserId,
+      firstName: user.firstName,
+      username: user.username,
+      languageCode: user.languageCode,
+      defaultOriginCode: user.defaultOriginCode,
+      onboardingCompleted: user.onboardingCompleted,
       preferredTripClass: user.preferredTripClass,
       baggageRequired: user.baggageRequired
     });
@@ -318,12 +345,16 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
     const user = await dependencies.miniApp.updateProfile(
       telegramUserId,
       tripClass(body.preferredTripClass),
-      bodyBoolean(body.baggageRequired)
+      bodyBoolean(body.baggageRequired),
+      requiredBodyString(body.defaultOriginCode, 'defaultOriginCode')
     );
     response.json({
       telegramUserId: user.telegramUserId,
       firstName: user.firstName,
       username: user.username,
+      languageCode: user.languageCode,
+      defaultOriginCode: user.defaultOriginCode,
+      onboardingCompleted: user.onboardingCompleted,
       preferredTripClass: user.preferredTripClass,
       baggageRequired: user.baggageRequired
     });

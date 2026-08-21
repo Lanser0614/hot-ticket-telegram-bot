@@ -2,6 +2,8 @@ import type { Clock, UserRepository } from './ports.js';
 import type { TelegramProfileInput, User } from './models.js';
 import { ValidationError } from '../domain/errors.js';
 import type { TripClass } from '../domain/travel-preferences.js';
+import { isUzbekistanOrigin } from '../domain/locations.js';
+import type { AppLanguage } from '../presentation/language.js';
 
 function assertTelegramId(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -58,5 +60,40 @@ export class UserService {
       baggageRequired,
       this.clock.now()
     );
+  }
+
+  public async completeOnboarding(
+    telegramUserId: number,
+    language: AppLanguage,
+    defaultOriginCode: string
+  ): Promise<User> {
+    const user = await this.requireByTelegramUserId(telegramUserId);
+    const originCode = defaultOriginCode.trim().toUpperCase();
+    if (!isUzbekistanOrigin(originCode)) {
+      throw new ValidationError('Город вылета должен находиться в Узбекистане');
+    }
+    const now = this.clock.now();
+    await this.users.completeOnboarding(user.id, language, originCode, now);
+    return {
+      ...user,
+      languageCode: language,
+      defaultOriginCode: originCode,
+      onboardingCompleted: true,
+      updatedAt: now
+    };
+  }
+
+  public async updateDefaultOrigin(
+    telegramUserId: number,
+    defaultOriginCode: string
+  ): Promise<User> {
+    const user = await this.requireByTelegramUserId(telegramUserId);
+    const originCode = defaultOriginCode.trim().toUpperCase();
+    if (!isUzbekistanOrigin(originCode)) {
+      throw new ValidationError('Город вылета должен находиться в Узбекистане');
+    }
+    const now = this.clock.now();
+    await this.users.updateDefaultOrigin(user.id, originCode, now);
+    return { ...user, defaultOriginCode: originCode, updatedAt: now };
   }
 }

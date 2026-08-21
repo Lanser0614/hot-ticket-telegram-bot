@@ -67,7 +67,7 @@ describe('ticket pagination callbacks', () => {
   it('строит кнопку всех направлений с текущей сигнатурой', () => {
     expect(allDestinationsKeyboard({ tripClass: 'economy', baggageRequired: false }))
       .toEqual({ inline_keyboard: [[{
-        text: '🌍 Все направления из Ташкента',
+        text: '🌍 Все направления',
         callback_data: 'tickets:ALL:0:E0'
       }]] });
   });
@@ -79,7 +79,7 @@ describe('ticket pagination callbacks', () => {
           { text: '🇺🇿 Локальные рейсы', callback_data: 'catalog:dom:0' },
           { text: '🌍 Международные', callback_data: 'catalog:intl:0' }
         ],
-        [{ text: '🌍 Все направления из Ташкента', callback_data: 'tickets:ALL:0:E0' }]
+        [{ text: '🌍 Все направления', callback_data: 'tickets:ALL:0:E0' }]
       ]
     });
   });

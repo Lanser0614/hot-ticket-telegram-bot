@@ -5,8 +5,11 @@ import type {
 } from '../application/tickets.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { ValidationError } from '../domain/errors.js';
+import { getLocalizedLocationName } from '../domain/locations.js';
 import type { TripClass } from '../domain/travel-preferences.js';
 import { TICKET_PAGE_SIZE } from '../domain/travel-preferences.js';
+import type { AppLanguage } from './language.js';
+import { message } from './language.js';
 
 const MAX_TICKET_OFFSET = 10_000;
 export const CITY_PAGE_SIZE = 12;
@@ -73,10 +76,10 @@ export function parseTicketCursor(data: string): TicketCursor | null {
   };
 }
 
-export function allDestinationsKeyboard(filter: TicketFilter): unknown {
+export function allDestinationsKeyboard(filter: TicketFilter, language: AppLanguage = 'ru'): unknown {
   return {
     inline_keyboard: [[{
-      text: '🌍 Все направления из Ташкента',
+      text: message(language, 'allDestinations'),
       callback_data: encodeTicketCursor({
         destinationCode: null,
         offset: 0,
@@ -104,15 +107,15 @@ export function parseCatalogCommand(data: string): CatalogCommand | null {
   return { kind: 'scope', scope: key === 'dom' ? 'domestic' : 'international', offset };
 }
 
-export function catalogTabsKeyboard(filter: TicketFilter): unknown {
+export function catalogTabsKeyboard(filter: TicketFilter, language: AppLanguage = 'ru'): unknown {
   return {
     inline_keyboard: [
       [
-        { text: '🇺🇿 Локальные рейсы', callback_data: 'catalog:dom:0' },
-        { text: '🌍 Международные', callback_data: 'catalog:intl:0' }
+        { text: message(language, 'localFlights'), callback_data: 'catalog:dom:0' },
+        { text: message(language, 'internationalFlights'), callback_data: 'catalog:intl:0' }
       ],
       [{
-        text: '🌍 Все направления из Ташкента',
+        text: message(language, 'allDestinations'),
         callback_data: encodeTicketCursor({ destinationCode: null, offset: 0, ...filter })
       }]
     ]
@@ -123,37 +126,39 @@ export function catalogCitiesKeyboard(
   scope: DestinationScope,
   cities: readonly AvailableDestination[],
   offset: number,
-  filter: TicketFilter
+  filter: TicketFilter,
+  language: AppLanguage = 'ru'
 ): unknown {
   const pageCities = cities.slice(offset, offset + CITY_PAGE_SIZE);
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (let index = 0; index < pageCities.length; index += 2) {
     rows.push(pageCities.slice(index, index + 2).map((city) => ({
-      text: `${city.name} (${city.code})`,
+      text: `${getLocalizedLocationName(city.code, language) ?? city.name} (${city.code})`,
       callback_data: encodeTicketCursor({ destinationCode: city.code, offset: 0, ...filter })
     })));
   }
   const key = scopeKey(scope);
   const nav: Array<{ text: string; callback_data: string }> = [];
   if (offset > 0) {
-    nav.push({ text: '⬅️ Назад', callback_data: `catalog:${key}:${offset - CITY_PAGE_SIZE}` });
+    nav.push({ text: message(language, 'back'), callback_data: `catalog:${key}:${offset - CITY_PAGE_SIZE}` });
   }
   if (offset + CITY_PAGE_SIZE < cities.length) {
-    nav.push({ text: '➡️ Ещё города', callback_data: `catalog:${key}:${offset + CITY_PAGE_SIZE}` });
+    nav.push({ text: message(language, 'moreCities'), callback_data: `catalog:${key}:${offset + CITY_PAGE_SIZE}` });
   }
   if (nav.length > 0) rows.push(nav);
-  rows.push([{ text: '🔙 К категориям', callback_data: 'catalog:home' }]);
+  rows.push([{ text: message(language, 'categories'), callback_data: 'catalog:home' }]);
   return { inline_keyboard: rows };
 }
 
 export function ticketNavigationKeyboard(
   page: TicketPage,
-  filter: TicketFilter
+  filter: TicketFilter,
+  language: AppLanguage = 'ru'
 ): unknown {
   const buttons: Array<{ text: string; callback_data: string }> = [];
   if (page.hasPrevious) {
     buttons.push({
-      text: '⬅️ Назад',
+      text: message(language, 'back'),
       callback_data: encodeTicketCursor({
         destinationCode: page.destinationCode,
         offset: Math.max(0, page.offset - TICKET_PAGE_SIZE),
@@ -163,7 +168,7 @@ export function ticketNavigationKeyboard(
   }
   if (page.hasNext && page.offset + TICKET_PAGE_SIZE <= MAX_TICKET_OFFSET) {
     buttons.push({
-      text: '➡️ Показать ещё',
+      text: message(language, 'showMore'),
       callback_data: encodeTicketCursor({
         destinationCode: page.destinationCode,
         offset: page.offset + TICKET_PAGE_SIZE,

@@ -30,6 +30,7 @@ import type { Ticket } from '../../domain/ticket.js';
 import type { TripClass } from '../../domain/travel-preferences.js';
 import type { RouteDailyPoint, RoutePriceObservation } from '../../domain/route-price.js';
 import { dateInTimeZone } from '../../domain/dates.js';
+import { UZBEKISTAN_ORIGIN_CODES } from '../../domain/locations.js';
 
 interface PriceHistoryRecord {
   ticketId: number;
@@ -133,6 +134,7 @@ export class MemoryStore implements
       preferredCurrencyCode: 'UZS',
       preferredTripClass: 'economy',
       baggageRequired: false,
+      onboardingCompleted: true,
       isActive: true,
       createdAt: now,
       updatedAt: now
@@ -164,7 +166,10 @@ export class MemoryStore implements
   public upsertTelegramProfile(input: TelegramProfileInput, now: Date): Promise<User> {
     const existing = this.users.find((item) => item.telegramUserId === input.telegramUserId);
     if (existing !== undefined) {
-      Object.assign(existing, input, { updatedAt: now });
+      Object.assign(existing, input, {
+        languageCode: existing.onboardingCompleted ? existing.languageCode : input.languageCode,
+        updatedAt: now
+      });
       return Promise.resolve({ ...existing });
     }
     const user: User = {
@@ -175,6 +180,7 @@ export class MemoryStore implements
       preferredCurrencyCode: 'UZS',
       preferredTripClass: 'economy',
       baggageRequired: false,
+      onboardingCompleted: false,
       isActive: true,
       createdAt: now,
       updatedAt: now
@@ -196,6 +202,32 @@ export class MemoryStore implements
   public updatePhone(userId: number, phoneNumber: string, now: Date): Promise<void> {
     const user = this.users.find((item) => item.id === userId);
     if (user !== undefined) Object.assign(user, { phoneNumber, updatedAt: now });
+    return Promise.resolve();
+  }
+
+  public completeOnboarding(
+    userId: number,
+    languageCode: string,
+    defaultOriginCode: string,
+    now: Date
+  ): Promise<void> {
+    const user = this.users.find((item) => item.id === userId);
+    if (user !== undefined) Object.assign(user, {
+      languageCode,
+      defaultOriginCode,
+      onboardingCompleted: true,
+      updatedAt: now
+    });
+    return Promise.resolve();
+  }
+
+  public updateDefaultOrigin(
+    userId: number,
+    defaultOriginCode: string,
+    now: Date
+  ): Promise<void> {
+    const user = this.users.find((item) => item.id === userId);
+    if (user !== undefined) Object.assign(user, { defaultOriginCode, updatedAt: now });
     return Promise.resolve();
   }
 
@@ -507,22 +539,22 @@ export class MemoryStore implements
 
   public ensureInitialSource(now: Date): Promise<void> {
     for (const source of this.syncSources) {
-      if (source.originCode !== 'TAS' || source.currencyCode !== 'UZS') {
-        source.isEnabled = false;
-      }
+      source.isEnabled = false;
     }
-    const existing = this.syncSources.find((item) => (
-      item.originCode === 'TAS' && item.currencyCode === 'UZS'
-    ));
-    if (existing !== undefined) {
-      existing.isEnabled = true;
-    } else {
-      this.syncSources.push({
-        id: this.nextSyncSourceId++,
-        originCode: 'TAS',
-        currencyCode: 'UZS',
-        isEnabled: true
-      });
+    for (const originCode of UZBEKISTAN_ORIGIN_CODES) {
+      const existing = this.syncSources.find((item) => (
+        item.originCode === originCode && item.currencyCode === 'UZS'
+      ));
+      if (existing !== undefined) {
+        existing.isEnabled = true;
+      } else {
+        this.syncSources.push({
+          id: this.nextSyncSourceId++,
+          originCode,
+          currencyCode: 'UZS',
+          isEnabled: true
+        });
+      }
     }
     void now;
     return Promise.resolve();

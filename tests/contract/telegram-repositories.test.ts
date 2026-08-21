@@ -54,6 +54,7 @@ function userRow(): Readonly<Record<string, unknown>> {
     preferred_currency_code: 'UZS',
     preferred_trip_class: 'economy',
     baggage_required: 0,
+    onboarding_completed: 1,
     is_active: 1,
     created_at: 1_775_300_400,
     updated_at: 1_775_300_400

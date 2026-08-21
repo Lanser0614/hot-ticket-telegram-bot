@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Clock } from '../../src/application/ports.js';
 import type { Ticket } from '../../src/domain/ticket.js';
 import { createRouteKey } from '../../src/domain/route-price.js';
+import { UZBEKISTAN_ORIGIN_CODES } from '../../src/domain/locations.js';
 import { SqliteAdminRepository } from '../../src/infrastructure/sqlite/admin-repository.js';
 import { openSqliteDatabase } from '../../src/infrastructure/sqlite/database.js';
 import { applyMigrations } from '../../src/infrastructure/sqlite/migrations.js';
@@ -137,24 +138,16 @@ describe('ApplicationRepositories on SQLite', () => {
 
     await repositories.ensureInitialSource(now);
     await repositories.ensureInitialSource(now);
-    expect(await repositories.findEnabled()).toEqual([{
-      id: 1,
-      originCode: 'TAS',
-      currencyCode: 'UZS',
-      isEnabled: true
-    }]);
+    expect((await repositories.findEnabled()).map((source) => source.originCode))
+      .toEqual(UZBEKISTAN_ORIGIN_CODES);
     await database.run(`
       INSERT INTO sync_sources (
         origin_code, currency_code, is_enabled, created_at, updated_at
       ) VALUES ('ALA', 'USD', 1, 1, 1)
     `);
     await repositories.ensureInitialSource(now);
-    expect(await repositories.findEnabled()).toEqual([{
-      id: 1,
-      originCode: 'TAS',
-      currencyCode: 'UZS',
-      isEnabled: true
-    }]);
+    expect((await repositories.findEnabled()).map((source) => source.originCode))
+      .toEqual(UZBEKISTAN_ORIGIN_CODES);
     expect(await repositories.acquire('sync:hot-tickets:TAS:UZS', 300)).toBe(true);
     expect(await repositories.acquire('sync:hot-tickets:TAS:UZS', 300)).toBe(false);
     await repositories.release('sync:hot-tickets:TAS:UZS');

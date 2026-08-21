@@ -154,6 +154,89 @@ describe('Mini App web server', () => {
     });
   });
 
+  it('сохраняет язык и город вылета из onboarding только для Узбекистана', async () => {
+    const response = await fetch(`${baseUrl}/api/v1/onboarding`, {
+      method: 'POST',
+      headers: {
+        authorization: `tma ${initData(clock)}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ languageCode: 'uz', defaultOriginCode: 'SKD' })
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      languageCode: 'uz', defaultOriginCode: 'SKD', onboardingCompleted: true
+    });
+    await expect(repositories.findByTelegramUserId(100)).resolves.toMatchObject({
+      languageCode: 'uz', defaultOriginCode: 'SKD', onboardingCompleted: true
+    });
+
+    const subscription = await fetch(`${baseUrl}/api/v1/subscriptions`, {
+      method: 'POST',
+      headers: {
+        authorization: `tma ${initData(clock)}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        destinationCode: 'IST',
+        departureDateFrom: '2026-09-10',
+        departureDateTo: '2026-09-20',
+        maxPrice: null,
+        directOnly: false,
+        roundTripOnly: false,
+        baggageRequired: false
+      })
+    });
+    expect(subscription.status).toBe(201);
+    await expect(subscription.json()).resolves.toMatchObject({ originCode: 'SKD' });
+
+    const profileUpdate = await fetch(`${baseUrl}/api/v1/me`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `tma ${initData(clock)}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        preferredTripClass: 'economy',
+        baggageRequired: false,
+        defaultOriginCode: 'BHK'
+      })
+    });
+    expect(profileUpdate.status).toBe(200);
+    await expect(profileUpdate.json()).resolves.toMatchObject({ defaultOriginCode: 'BHK' });
+
+    const invalid = await fetch(`${baseUrl}/api/v1/onboarding`, {
+      method: 'POST',
+      headers: {
+        authorization: `tma ${initData(clock)}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ languageCode: 'ru', defaultOriginCode: 'ALA' })
+    });
+    expect(invalid.status).toBe(400);
+  });
+
+  it('локализует названия городов для узбекского пользователя', async () => {
+    await repositories.upsertTelegramProfile({
+      telegramUserId: 100,
+      telegramChatId: 200,
+      username: null,
+      firstName: 'Ali',
+      lastName: null,
+      languageCode: 'uz'
+    }, clock.now());
+
+    const response = await fetch(`${baseUrl}/api/v1/deals`, {
+      headers: { authorization: `tma ${initData(clock)}` }
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ originName: 'Toshkent', destinationName: 'Istanbul' }]
+    });
+  });
+
   it('фиксирует человеческий переход один раз и редиректит на Aviasales', async () => {
     const catalog = await fetch(`${baseUrl}/api/v1/deals`, {
       headers: { authorization: `tma ${initData(clock)}` }

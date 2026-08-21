@@ -9,8 +9,6 @@ import {
 } from '../domain/locations.js';
 import { assertMoney } from '../domain/money.js';
 import {
-  DEFAULT_CURRENCY_CODE,
-  DEFAULT_ORIGIN_CODE,
   TICKET_PAGE_SIZE
 } from '../domain/travel-preferences.js';
 
@@ -64,8 +62,8 @@ export class TicketService {
     if (user === null) throw new ValidationError('Сначала выполните /start');
     const departureDateFrom = dateInTimeZone(this.clock.now(), 'Asia/Tashkent');
     const query = {
-      originCode: DEFAULT_ORIGIN_CODE,
-      currencyCode: DEFAULT_CURRENCY_CODE,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
       departureDateFrom,
       tripClass: user.preferredTripClass,
       baggageRequired: user.baggageRequired
@@ -103,8 +101,8 @@ export class TicketService {
       : normalizeIataCode(options.destinationCode);
 
     const rows = await this.tickets.listActive({
-      originCode: DEFAULT_ORIGIN_CODE,
-      currencyCode: DEFAULT_CURRENCY_CODE,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
       departureDateFrom,
       departureDateTo: options.departureDateTo === undefined ? null : assertIsoDate(options.departureDateTo),
       destinationCode,
