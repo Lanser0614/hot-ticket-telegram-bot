@@ -1,4 +1,10 @@
-import express, { type Express, type Request, type RequestHandler, type Response } from 'express';
+import express, {
+  type Express,
+  type Request,
+  type RequestHandler,
+  type Response,
+  Router
+} from 'express';
 
 import type {
   AdminScope,
@@ -17,6 +23,8 @@ export interface AdminServerDependencies {
   readonly auth: RequestHandler;
   readonly logger: Logger;
 }
+
+const ADMIN_BASE_PATH = '/admin';
 
 function firstValue(value: unknown): string {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : '';
@@ -63,20 +71,25 @@ function parseQuery(request: Request): AdminQuery {
 
 export function createAdminServer(dependencies: AdminServerDependencies): Express {
   const app = express();
+  const admin = Router();
   app.disable('x-powered-by');
 
   app.get('/healthz', (_request: Request, response: Response) => {
     response.type('text/plain').send('ok');
   });
 
-  app.use(dependencies.auth);
+  app.get('/', (_request: Request, response: Response) => {
+    response.redirect(`${ADMIN_BASE_PATH}/`);
+  });
 
-  app.get('/', async (request: Request, response: Response) => {
+  admin.use(dependencies.auth);
+
+  admin.get('/', async (request: Request, response: Response) => {
     try {
       const dashboard = await dependencies.adminService.getDashboard(parseQuery(request));
       const flash = firstValue(request.query.flash);
       response.type('text/html; charset=utf-8').send(
-        renderAdminPage(dashboard, flash.length === 0 ? undefined : flash)
+        renderAdminPage(dashboard, flash.length === 0 ? undefined : flash, ADMIN_BASE_PATH)
       );
     } catch (error: unknown) {
       dependencies.logger.error('admin_dashboard_failed', {
@@ -86,18 +99,22 @@ export function createAdminServer(dependencies: AdminServerDependencies): Expres
     }
   });
 
-  app.post('/sync', async (_request: Request, response: Response) => {
+  admin.post('/sync', async (_request: Request, response: Response) => {
     try {
       const result = await dependencies.runSync();
       const flash = `Синхронизация запущена. Обработано источников: ${result.processedSources}.`;
-      response.redirect(`/?flash=${encodeURIComponent(flash)}`);
+      response.redirect(`${ADMIN_BASE_PATH}/?flash=${encodeURIComponent(flash)}`);
     } catch (error: unknown) {
       dependencies.logger.error('admin_manual_sync_failed', {
         error: error instanceof Error ? error.message : 'Неизвестная ошибка'
       });
-      response.redirect(`/?flash=${encodeURIComponent('Не удалось запустить синхронизацию.')}`);
+      response.redirect(
+        `${ADMIN_BASE_PATH}/?flash=${encodeURIComponent('Не удалось запустить синхронизацию.')}`
+      );
     }
   });
+
+  app.use(ADMIN_BASE_PATH, admin);
 
   return app;
 }

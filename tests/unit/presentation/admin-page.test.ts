@@ -50,7 +50,7 @@ describe('renderAdminPage', () => {
     expect(html).toContain('➡️ В одну сторону (0)');
     expect(html).toContain('name="date"');
     expect(html).toContain('Активных билетов');
-    expect(html).toContain('action="/sync"');
+    expect(html).toContain('action="/admin/sync"');
   });
 
   it('переносит фильтры даты и типа в ссылки сортировки и вкладок', () => {
@@ -100,7 +100,7 @@ describe('renderAdminPage', () => {
         direction: 'asc', search: 'IST', page: 1
       }
     }));
-    expect(withSearch).toContain('<a class="reset" href="/">Сбросить</a>');
+    expect(withSearch).toContain('<a class="reset" href="/admin/">Сбросить</a>');
 
     const withScope = renderAdminPage(dashboard({
       query: {

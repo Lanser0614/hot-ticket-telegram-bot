@@ -32,10 +32,10 @@ function formatDateTime(value: Date | null): string {
   }).format(value);
 }
 
-function queryString(params: Record<string, string | number>): string {
+function queryString(basePath: string, params: Record<string, string | number>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) search.set(key, String(value));
-  return `?${search.toString()}`;
+  return `${basePath}/?${search.toString()}`;
 }
 
 function baseParams(dashboard: AdminDashboard): Record<string, string | number> {
@@ -52,23 +52,40 @@ function baseParams(dashboard: AdminDashboard): Record<string, string | number> 
   };
 }
 
-function sortLink(dashboard: AdminDashboard, sort: AdminSort, label: string): string {
+function sortLink(
+  dashboard: AdminDashboard,
+  sort: AdminSort,
+  label: string,
+  basePath: string
+): string {
   const { query } = dashboard;
   const active = query.sort === sort;
   const direction = active && query.direction === 'asc' ? 'desc' : 'asc';
   const arrow = active ? (query.direction === 'asc' ? ' ▲' : ' ▼') : '';
-  const href = queryString({ ...baseParams(dashboard), sort, dir: direction });
+  const href = queryString(basePath, { ...baseParams(dashboard), sort, dir: direction });
   return `<a href="${escapeHtml(href)}">${escapeHtml(label)}${arrow}</a>`;
 }
 
-function scopeTab(dashboard: AdminDashboard, scope: AdminScope, label: string, count: number): string {
-  const href = queryString({ ...baseParams(dashboard), scope });
+function scopeTab(
+  dashboard: AdminDashboard,
+  scope: AdminScope,
+  label: string,
+  count: number,
+  basePath: string
+): string {
+  const href = queryString(basePath, { ...baseParams(dashboard), scope });
   const cls = dashboard.query.scope === scope ? 'tab active' : 'tab';
   return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
 }
 
-function tripTab(dashboard: AdminDashboard, trip: AdminTripFilter, label: string, count: number): string {
-  const href = queryString({ ...baseParams(dashboard), trip });
+function tripTab(
+  dashboard: AdminDashboard,
+  trip: AdminTripFilter,
+  label: string,
+  count: number,
+  basePath: string
+): string {
+  const href = queryString(basePath, { ...baseParams(dashboard), trip });
   const cls = dashboard.query.trip === trip ? 'tab active' : 'tab';
   return `<a class="${cls}" href="${escapeHtml(href)}">${escapeHtml(label)} (${formatNumber(count)})</a>`;
 }
@@ -115,10 +132,10 @@ function row(view: AdminTicketView): string {
   return `<tr>${cells.map((cell) => `<td>${cell}</td>`).join('')}</tr>`;
 }
 
-function pagination(dashboard: AdminDashboard): string {
+function pagination(dashboard: AdminDashboard, basePath: string): string {
   if (dashboard.pageCount <= 1) return '';
   const link = (page: number, label: string): string => {
-    const href = queryString({ ...baseParams(dashboard), page });
+    const href = queryString(basePath, { ...baseParams(dashboard), page });
     return `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
   };
   const parts: string[] = [];
@@ -198,13 +215,17 @@ const STYLES = `
   }
 `;
 
-export function renderAdminPage(dashboard: AdminDashboard, flash?: string): string {
+export function renderAdminPage(
+  dashboard: AdminDashboard,
+  flash?: string,
+  basePath = '/admin'
+): string {
   const { query } = dashboard;
   const headers = [
-    `<th>${sortLink(dashboard, 'city', 'Город')}</th>`,
+    `<th>${sortLink(dashboard, 'city', 'Город', basePath)}</th>`,
     '<th>Тип</th>',
-    `<th>${sortLink(dashboard, 'price', 'Цена')}</th>`,
-    `<th>${sortLink(dashboard, 'date', 'Вылет')}</th>`,
+    `<th>${sortLink(dashboard, 'price', 'Цена', basePath)}</th>`,
+    `<th>${sortLink(dashboard, 'date', 'Вылет', basePath)}</th>`,
     '<th>Обратно</th>',
     '<th>Класс</th>',
     '<th>Рейс</th>',
@@ -232,24 +253,24 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
     <div class="filter-group">
       <span class="group-label">Направление</span>
       <div class="tabs">
-        ${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active)}
-        ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic)}
-        ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international)}
+        ${scopeTab(dashboard, 'all', 'Все', dashboard.counts.active, basePath)}
+        ${scopeTab(dashboard, 'domestic', 'Локальные', dashboard.counts.domestic, basePath)}
+        ${scopeTab(dashboard, 'international', 'Международные', dashboard.counts.international, basePath)}
       </div>
     </div>
     <div class="filter-group">
       <span class="group-label">Тип поездки</span>
       <div class="tabs">
-        ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active)}
-        ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip)}
-        ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay)}
+        ${tripTab(dashboard, 'all', 'Любой', dashboard.counts.active, basePath)}
+        ${tripTab(dashboard, 'round', '🔁 Туда-обратно', dashboard.counts.roundTrip, basePath)}
+        ${tripTab(dashboard, 'oneway', '➡️ В одну сторону', dashboard.counts.oneWay, basePath)}
       </div>
     </div>
-    <form class="sync" method="post" action="/sync">
+    <form class="sync" method="post" action="${escapeHtml(basePath)}/sync">
       <button class="secondary" type="submit">↻ Синхронизировать сейчас</button>
     </form>
   </div>
-  <form class="search" method="get" action="/">
+  <form class="search" method="get" action="${escapeHtml(basePath)}/">
     <input type="hidden" name="scope" value="${escapeHtml(query.scope)}">
     <input type="hidden" name="trip" value="${escapeHtml(query.trip)}">
     <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
@@ -259,7 +280,7 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
     ${cityCombobox(dashboard.destinations, query.search)}
     <div class="filter-actions">
       <button type="submit">Найти</button>
-      ${hasActiveFilters(query) ? '<a class="reset" href="/">Сбросить</a>' : ''}
+      ${hasActiveFilters(query) ? `<a class="reset" href="${escapeHtml(basePath)}/">Сбросить</a>` : ''}
     </div>
   </form>
   <div class="table-wrap">
@@ -268,7 +289,7 @@ export function renderAdminPage(dashboard: AdminDashboard, flash?: string): stri
       <tbody>${body}</tbody>
     </table>
   </div>
-  ${pagination(dashboard)}
+  ${pagination(dashboard, basePath)}
   <script>
     for (const combobox of document.querySelectorAll('[data-city-combobox]')) {
       const input = combobox.querySelector('input[role="combobox"]');

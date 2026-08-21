@@ -2,7 +2,8 @@
 
 Telegram-бот горячих авиабилетов Aviasales. Бот работает постоянным Node.js-процессом через long polling, хранит данные в локальном SQLite и запускает синхронизацию локальным cron каждые 10 минут.
 
-Домен, webhook, Nginx, Telegram Serverless и внешний cron-сервис не нужны.
+Публичный интерфейс работает через Caddy на `https://ticket.crosfit.uz`.
+Webhook, Nginx, Telegram Serverless и внешний cron-сервис не нужны.
 
 ## Возможности
 
@@ -379,34 +380,24 @@ sudo -u hotticket test -w /opt/hot-ticket-bot/data
 
 Отдельный веб-сервис `dist/entries/admin.js` показывает каталог билетов с сортировкой по городу, цене и дате вылета, фильтром локальные/международные рейсы, поиском по городу или IATA-коду, сводной статистикой и кнопкой ручного запуска синхронизации. Это независимый процесс: основной бот по-прежнему работает без входящего HTTP.
 
-Панель защищена HTTP Basic Auth. Задайте переменные в `/etc/hot-ticket-bot.env`:
+Панель защищена HTTP Basic Auth и доступна только через HTTPS. Задайте
+переменные в `/etc/hot-ticket-bot.env`:
 
 ```dotenv
-ADMIN_HOST=0.0.0.0
-ADMIN_PORT=80
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=8080
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=длинный-случайный-пароль
 ```
 
-`ADMIN_HOST=0.0.0.0` и порт 80 делают панель доступной публично по адресу
-`http://<IP-сервера>/` без указания порта в браузере.
+Systemd unit принудительно оставляет Node.js на `127.0.0.1:8080`, даже если в
+старом production environment сохранились публичные `ADMIN_HOST` или
+`ADMIN_PORT`. Caddy занимает порты 80 и 443, автоматически получает и
+продлевает сертификат, перенаправляет HTTP на HTTPS и проксирует админку.
+Переход на `/` перенаправляет браузер в защищённый раздел `/admin/`.
 
-⚠️ **Важно понимать риск**: HTTP Basic Auth передаёт логин и пароль в
-открытом виде, а порт 80 обслуживает обычный (не TLS) HTTP. Любой, кто
-видит трафик между браузером и сервером (провайдер, соседняя сеть,
-промежуточный узел), может перехватить пароль. Если это неприемлемо —
-поставьте перед панелью TLS-терминацию (например, Nginx/Caddy с
-Let's Encrypt на порту 443 и `ADMIN_HOST=127.0.0.1`/`ADMIN_PORT=8080` за
-ним) или продолжайте использовать доступ только через SSH-туннель
-(`ADMIN_HOST=127.0.0.1`). Обязательно используйте длинный случайный
-`ADMIN_PASSWORD` и не переиспользуйте его нигде.
-
-Порт 80 — привилегированный, обычные процессы не могут слушать его без
-root. Юнит `deploy/systemd/hot-ticket-admin.service` уже включает
-`AmbientCapabilities=CAP_NET_BIND_SERVICE`, поэтому процесс продолжает
-работать от имени непривилегированного пользователя `hotticket`, но может
-забиндиться на порт 80. Если используете порт выше 1024 — эту capability
-можно убрать, но она безвредна и в этом случае.
+Маршруты `/app/*`, `/api/*` и `/go/*` уже зарезервированы за будущим
+Mini App web service на `127.0.0.1:8081`.
 
 Установите systemd unit и запустите сервис:
 
@@ -416,11 +407,29 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now hot-ticket-admin
 ```
 
-Если на VDS включён firewall (`ufw`/`iptables`), откройте порт 80:
+Установите Caddy и конфигурацию повторным запуском bootstrap-скрипта:
+
+```bash
+cd /opt/hot-ticket-bot
+sudo ./deploy/scripts/setup-vds.sh --enable-admin
+```
+
+Если на VDS включён firewall (`ufw`/`iptables`), откройте HTTP и HTTPS:
 
 ```bash
 sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 ```
 
-Затем откройте `http://<IP-сервера>/` в браузере. Liveness-проверка
-доступна без авторизации на `/healthz`.
+Проверьте конфигурацию и сертификат:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl status caddy hot-ticket-admin --no-pager
+curl -I http://ticket.crosfit.uz/
+curl -I https://ticket.crosfit.uz/admin/
+```
+
+Первый запрос должен перенаправляться на HTTPS, второй — отвечать `401` с
+заголовком `WWW-Authenticate`, пока логин и пароль не переданы. Liveness-проверка
+доступна без авторизации на `https://ticket.crosfit.uz/healthz`.

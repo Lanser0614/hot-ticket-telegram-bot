@@ -56,6 +56,24 @@ run_as_app_user /usr/bin/git -C "$DEPLOY_DIRECTORY" branch \
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" ci
 run_as_app_user /usr/bin/npm --prefix "$DEPLOY_DIRECTORY" run build
 
+/usr/bin/install -o root -g root -m 644 \
+  "$DEPLOY_DIRECTORY/deploy/systemd/hot-ticket-bot.service" \
+  /etc/systemd/system/hot-ticket-bot.service
+
+if [[ -x /usr/bin/caddy ]]; then
+  /usr/bin/caddy validate \
+    --config "$DEPLOY_DIRECTORY/deploy/caddy/Caddyfile" \
+    --adapter caddyfile
+  /usr/bin/install -o root -g root -m 644 \
+    "$DEPLOY_DIRECTORY/deploy/systemd/hot-ticket-admin.service" \
+    /etc/systemd/system/hot-ticket-admin.service
+  /usr/bin/install -o root -g root -m 644 \
+    "$DEPLOY_DIRECTORY/deploy/caddy/Caddyfile" \
+    /etc/caddy/Caddyfile
+fi
+
+/usr/bin/systemctl daemon-reload
+
 run_as_app_user /bin/bash -c '
   set -a
   source "$1"
@@ -69,6 +87,13 @@ run_as_app_user /bin/bash -c '
 if /usr/bin/systemctl is-enabled --quiet hot-ticket-admin.service; then
   /usr/bin/systemctl restart hot-ticket-admin.service
   /usr/bin/systemctl is-active --quiet hot-ticket-admin.service
+fi
+
+if [[ -x /usr/bin/caddy ]]; then
+  /usr/bin/systemctl reload caddy.service
+  /usr/bin/systemctl is-active --quiet caddy.service
+else
+  echo 'Caddy is not installed; run deploy/scripts/setup-vds.sh on the VDS to enable HTTPS.'
 fi
 
 echo "Successfully deployed $COMMIT."

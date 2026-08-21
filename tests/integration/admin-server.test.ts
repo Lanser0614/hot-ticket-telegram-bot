@@ -66,41 +66,52 @@ describe('admin server', () => {
     expect(await response.text()).toBe('ok');
   });
 
-  it('требует Basic Auth на /', async () => {
+  it('перенаправляет / на /admin/', async () => {
     const base = await startServer();
-    const response = await fetch(`${base}/`);
+    const response = await fetch(`${base}/`, { redirect: 'manual' });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/admin/');
+  });
+
+  it('требует Basic Auth на /admin/', async () => {
+    const base = await startServer();
+    const response = await fetch(`${base}/admin/`);
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toContain('Basic');
   });
 
   it('рендерит панель с верными данными', async () => {
     const base = await startServer();
-    const response = await fetch(`${base}/`, { headers: { authorization: authHeader('admin', 'secret') } });
+    const response = await fetch(`${base}/admin/`, {
+      headers: { authorization: authHeader('admin', 'secret') }
+    });
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('HotTicket');
     expect(html).toContain('Стамбул');
   });
 
-  it('запускает синхронизацию по POST /sync', async () => {
+  it('запускает синхронизацию по POST /admin/sync', async () => {
     let called = 0;
     const base = await startServer(() => {
       called += 1;
       return Promise.resolve({ processedSources: 2 });
     });
-    const response = await fetch(`${base}/sync`, {
+    const response = await fetch(`${base}/admin/sync`, {
       method: 'POST',
       redirect: 'manual',
       headers: { authorization: authHeader('admin', 'secret') }
     });
     expect(called).toBe(1);
     expect(response.status).toBe(302);
-    expect(response.headers.get('location')).toContain('/?flash=');
+    expect(response.headers.get('location')).toContain('/admin/?flash=');
   });
 
   it('отклоняет неверный пароль', async () => {
     const base = await startServer();
-    const response = await fetch(`${base}/`, { headers: { authorization: authHeader('admin', 'nope') } });
+    const response = await fetch(`${base}/admin/`, {
+      headers: { authorization: authHeader('admin', 'nope') }
+    });
     expect(response.status).toBe(401);
   });
 });

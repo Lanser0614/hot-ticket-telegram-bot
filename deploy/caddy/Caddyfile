@@ -1,0 +1,26 @@
+ticket.crosfit.uz {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# These routes will be served by hot-ticket-web when the Mini App API lands.
+	@miniapp path /app /app/* /api /api/* /go /go/*
+	handle @miniapp {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	# The admin application redirects / to /admin/ and enforces Basic Auth itself.
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

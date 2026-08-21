@@ -10,6 +10,7 @@ readonly DEPLOY_COMMAND='/usr/local/sbin/hot-ticket-deploy'
 readonly SUDOERS_FILE='/etc/sudoers.d/hot-ticket-deploy'
 readonly BOT_SERVICE='hot-ticket-bot.service'
 readonly ADMIN_SERVICE='hot-ticket-admin.service'
+readonly CADDY_SERVICE='caddy.service'
 
 DEPLOY_PUBLIC_KEY_FILE=''
 ENVIRONMENT_SOURCE=''
@@ -104,10 +105,14 @@ log 'Installing Ubuntu packages'
 /usr/bin/apt-get update
 /usr/bin/apt-get install -y \
   build-essential \
+  apt-transport-https \
   ca-certificates \
   cron \
   curl \
+  debian-archive-keyring \
+  debian-keyring \
   git \
+  gnupg \
   openssh-server \
   python3 \
   sqlite3 \
@@ -209,6 +214,40 @@ printf '%s\n' \
 /usr/bin/systemctl enable ssh cron
 /usr/bin/systemctl restart cron
 
+# An older installation may still have the admin process bound to public port 80.
+# Restart it with the hardened unit before Caddy attempts to claim ports 80 and 443.
+if /usr/bin/systemctl is-active --quiet "$ADMIN_SERVICE"; then
+  /usr/bin/systemctl restart "$ADMIN_SERVICE"
+fi
+
+if ! command -v caddy >/dev/null 2>&1; then
+  log 'Installing Caddy from the official stable repository'
+  /usr/bin/curl -1sLf \
+    https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+    -o "$TEMP_DIRECTORY/caddy-stable.gpg.key"
+  /usr/bin/gpg --dearmor --batch --yes \
+    -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+    "$TEMP_DIRECTORY/caddy-stable.gpg.key"
+  /usr/bin/curl -1sLf \
+    https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
+    -o /etc/apt/sources.list.d/caddy-stable.list
+  /usr/bin/chmod o+r \
+    /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+    /etc/apt/sources.list.d/caddy-stable.list
+  /usr/bin/apt-get update
+  /usr/bin/apt-get install -y caddy
+fi
+
+log 'Configuring automatic HTTPS for ticket.crosfit.uz'
+/usr/bin/caddy validate \
+  --config "$APP_DIRECTORY/deploy/caddy/Caddyfile" \
+  --adapter caddyfile
+/usr/bin/install -o root -g root -m 644 \
+  "$APP_DIRECTORY/deploy/caddy/Caddyfile" /etc/caddy/Caddyfile
+/usr/bin/systemctl enable "$CADDY_SERVICE"
+/usr/bin/systemctl restart "$CADDY_SERVICE"
+/usr/bin/systemctl is-active --quiet "$CADDY_SERVICE"
+
 log 'Installing dependencies and verifying the application'
 /usr/sbin/runuser --user "$APP_USER" -- /usr/bin/npm --prefix "$APP_DIRECTORY" ci
 /usr/sbin/runuser --user "$APP_USER" -- /usr/bin/npm --prefix "$APP_DIRECTORY" run verify
@@ -230,11 +269,13 @@ if [[ "$START_SERVICES" == true ]]; then
     /usr/bin/node dist/entries/sync.js
   ' _ "$ENVIRONMENT_FILE" "$APP_DIRECTORY"
 
-  /usr/bin/systemctl enable --now "$BOT_SERVICE"
+  /usr/bin/systemctl enable "$BOT_SERVICE"
+  /usr/bin/systemctl restart "$BOT_SERVICE"
   /usr/bin/systemctl is-active --quiet "$BOT_SERVICE"
 
   if [[ "$ENABLE_ADMIN" == true ]]; then
-    /usr/bin/systemctl enable --now "$ADMIN_SERVICE"
+    /usr/bin/systemctl enable "$ADMIN_SERVICE"
+    /usr/bin/systemctl restart "$ADMIN_SERVICE"
     /usr/bin/systemctl is-active --quiet "$ADMIN_SERVICE"
   fi
 else

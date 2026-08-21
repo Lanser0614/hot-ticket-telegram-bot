@@ -28,6 +28,19 @@ describe('VDS deploy files', () => {
     expect(readme).toContain('03:30 по системному времени VDS');
   });
 
+  it('терминирует TLS через Caddy и не выставляет Node admin напрямую', () => {
+    const caddyfile = readFileSync('deploy/caddy/Caddyfile', 'utf8');
+    const adminUnit = readFileSync('deploy/systemd/hot-ticket-admin.service', 'utf8');
+    const setup = readFileSync('deploy/scripts/setup-vds.sh', 'utf8');
+    expect(caddyfile).toContain('ticket.crosfit.uz');
+    expect(caddyfile).toContain('reverse_proxy 127.0.0.1:8080');
+    expect(caddyfile).toContain('/app/* /api /api/* /go /go/*');
+    expect(adminUnit).toContain('ADMIN_HOST=127.0.0.1 ADMIN_PORT=8080');
+    expect(adminUnit).not.toContain('CAP_NET_BIND_SERVICE');
+    expect(setup).toContain('dl.cloudsmith.io/public/caddy/stable');
+    expect(setup).toContain('/etc/caddy/Caddyfile');
+  });
+
   it('описывает установку Node.js 24 на чистой Ubuntu', () => {
     const readme = readFileSync('README.md', 'utf8');
     expect(readme).toContain('https://deb.nodesource.com/setup_24.x');
