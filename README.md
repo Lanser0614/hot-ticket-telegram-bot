@@ -451,7 +451,7 @@ WEB_PORT=8081
 CLICK_SIGNING_SECRET=<RANDOM_SECRET_AT_LEAST_32_CHARACTERS>
 AFFILIATE_MARKER=
 AFFILIATE_LINK_TEMPLATE=https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}
-MINIAPP_AUTH_MAX_AGE_SECONDS=900
+MINIAPP_AUTH_MAX_AGE_SECONDS=86400
 ```
 
 `TELEGRAM_BOT_USERNAME` включает персональные deep links для shared-билетов и

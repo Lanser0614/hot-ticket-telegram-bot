@@ -20,7 +20,7 @@ const state = {
   homeSearch: '', homeSearchDestinationCode: null, homeSuggestions: [], homeSuggestionsQuery: '', homeSearchActiveIndex: -1,
   homeScopedDestinationCode: null, homeScopedDeals: null, homeScopedNextCursor: null, homeScopedLoadingMore: false,
   homeSort: 'best', homeFilters: { directOnly: false, maxPrice: null, baggageRequired: false },
-  homeSearchTimer: null, sheetForm: null, toastTimer: null
+  homeSearchTimer: null, sheetForm: null, toastTimer: null, sessionExpired: false
 };
 const icon = (name) => `<span class="icon icon-${name}" aria-hidden="true"></span>`;
 const originNames = { TAS: 'Ташкент', SKD: 'Самарканд', BHK: 'Бухара', FEG: 'Фергана', NMA: 'Наманган', UGC: 'Ургенч' };
@@ -50,17 +50,31 @@ function applyTelegramChrome() {
 }
 function haptic(style = 'light') { telegram?.HapticFeedback?.impactOccurred?.(style); }
 
+const API_TIMEOUT_MS = 15_000;
+class ApiError extends Error {
+  constructor(message, code = null) { super(message); this.code = code; }
+}
+
 async function api(path, options = {}) {
   if (demoMode) return demoApi(path, options);
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', Authorization: `tma ${telegram?.initData ?? ''}`, ...(options.headers ?? {}) }
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.error?.message ?? 'Не удалось выполнить запрос');
+  const controller = new globalThis.AbortController(); const timeout = globalThis.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(path, {
+      ...options, signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: `tma ${telegram?.initData ?? ''}`, ...(options.headers ?? {}) }
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null); const code = payload?.error?.code ?? null;
+      if (code === 'unauthorized') { state.sessionExpired = true; renderSessionExpired(); }
+      throw new ApiError(payload?.error?.message ?? 'Не удалось выполнить запрос', code);
+    }
+    return response.status === 204 ? null : response.json();
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new ApiError(t('requestTimedOut'), 'timeout');
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return response.status === 204 ? null : response.json();
 }
 
 function demoApi(path, options) {
@@ -107,8 +121,16 @@ function showToast(message) {
 }
 function loading() { content.innerHTML = '<div class="screen-loader"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>'; }
 function errorScreen(error, retry) {
+  if (state.sessionExpired) { renderSessionExpired(); return; }
   content.innerHTML = `<section class="screen error-state"><span class="state-icon">${icon('wifi-off')}</span><div class="state-title">${t('loadFailed')}</div><div class="state-copy">${escapeHtml(error instanceof Error ? error.message : t('tryAgain'))}</div><button id="retry" class="primary state-action" type="button">${t('retry')}</button></section>`;
   document.querySelector('#retry')?.addEventListener('click', retry);
+}
+function renderSessionExpired() {
+  showTabs(false); sheet.classList.add('hidden'); backdrop.classList.add('hidden');
+  content.innerHTML = `<section class="screen locked-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">${t('sessionExpired')}</div><div class="state-copy">${t('sessionExpiredHelp')}</div><button id="close-expired-session" class="primary state-action" type="button">${t('reopenMiniApp')}</button></section>`;
+  document.querySelector('#close-expired-session')?.addEventListener('click', () => {
+    if (telegram?.close) telegram.close(); else globalThis.location.reload();
+  });
 }
 function showTabs(value) { bottomNav.classList.toggle('hidden', !value); telegram?.BackButton?.[value ? 'hide' : 'show']?.(); }
 function setActiveNav() {
@@ -205,6 +227,7 @@ function homeSearchAndFilters() {
 }
 
 function renderHome() {
+  if (state.sessionExpired) { renderSessionExpired(); return; }
   applyDocumentLanguage(); state.screen = 'tabs'; showTabs(true); setActiveNav(); const visibleDeals = filteredDeals(); const hero = visibleDeals[0];
   if (!hero) {
     content.innerHTML = `<section class="screen home-screen">${homeSearchAndFilters()}<div class="empty-state home-empty"><span class="state-icon">${icon('ticket')}</span><div class="state-title">${t('noSearchResults')}</div><div class="state-copy">${t('changeSearch')}</div><button id="reset-home-filters" class="secondary state-action" type="button">${t('resetFilters')}</button></div></section>`;
@@ -318,6 +341,7 @@ async function loadHistory(days) {
   renderDetail();
 }
 function renderDetail() {
+  if (state.sessionExpired) { renderSessionExpired(); return; }
   applyDocumentLanguage(); const ticket = state.selectedTicket; const discount = percentBelow(ticket);
   content.innerHTML = `<section class="screen detail-screen"><header class="detail-top"><button id="back-detail" class="back-button" type="button" aria-label="Назад">${icon('chevron-left')}</button><button id="share-ticket" class="text-button" type="button">${icon('arrow-up-right')} ${t('sendToChat')}</button></header><div class="detail-route">${ticket.originCode} → ${ticket.destinationCode}</div><h1>${escapeHtml(ticket.originName)} → ${escapeHtml(ticket.destinationName)}</h1><div class="detail-price">${formatPrice(ticket.price)} <small>${escapeHtml(ticket.currencyCode)}</small></div>${discount ? `<div class="deal-pill">${t('belowUsual', { value: discount })}</div>` : ''}<div class="updated">${t('updatedRecently')}</div><article class="panel chart-panel"><div class="panel-title-row"><div><h2>${t('routePricesTitle')}</h2><p>${ticket.originCode} → ${ticket.destinationCode}</p></div><div class="range-tabs">${[7, 30, 90].map((days) => `<button class="range-button ${state.historyRange === days ? 'active' : ''}" type="button" data-range="${days}">${days}${language() === 'uz' ? 'k' : 'д'}</button>`).join('')}</div></div><canvas id="price-chart" class="chart-canvas" width="650" height="230"></canvas>${historyScale(ticket)}<div class="percentile-copy">${t('lowPriceCopy', { days: state.historyRange })}</div></article><article class="panel"><h2 class="panel-heading">${t('ticketDetails')}</h2><div class="info-row"><span>${t('dates')}</span><b>${dateRange(ticket)}</b></div><div class="info-row"><span>${t('flight')}</span><b>${ticket.isDirect ? t('direct') : t('withConnection')}</b></div><div class="info-row"><span>${t('baggage')}</span><b>${ticket.hasBaggage ? t('included') : t('notIncluded')}</b></div><div class="info-row"><span>${t('class')}</span><b>${className(ticket.tripClass)}</b></div><div class="info-row"><span>${t('airline')}</span><b>${escapeHtml(ticket.airlineName ?? '—')}</b></div></article><button id="track-detail" class="secondary" type="button">${icon('bell')} ${t('track')}</button></section><div class="purchase-bar"><a class="primary" href="${escapeHtml(ticket.openUrl)}" target="_blank" rel="noopener">${t('buyFor', { price: formatPrice(ticket.price), currency: ticket.currencyCode })}</a></div>`;
   document.querySelector('#back-detail')?.addEventListener('click', backToTabs); document.querySelector('#track-detail')?.addEventListener('click', () => openTracking(ticket.id));
@@ -374,6 +398,7 @@ async function disableTracking() {
 }
 
 function renderWatchlist() {
+  if (state.sessionExpired) { renderSessionExpired(); return; }
   applyDocumentLanguage(); state.screen = 'tabs'; showTabs(true); setActiveNav(); const active = state.subscriptions.filter((item) => item.isActive);
   content.innerHTML = `<section class="screen"><header class="watch-head"><div><div class="brand">${t('watchlist')}</div><h1>${t('myTracking')}</h1><p>${t('trackingCount', { count: active.length })}</p></div></header>${active.length ? `<div class="watch-list">${active.map(watchCard).join('')}</div>` : `<div class="empty-state"><span class="state-icon">${icon('bell')}</span><div class="state-title">${t('noRoutes')}</div><div class="state-copy">${t('noRoutesHelp')}</div></div>`}<div class="section-heading compact"><div><h2>${t('popularTracking')}</h2><p>${t('popularFrom')}</p></div></div><div class="suggestion-grid">${state.destinations.slice(0, 4).map((item) => `<button class="suggestion" type="button" data-add-destination="${item.code}"><b>${escapeHtml(item.name)}</b><small>${state.profile.defaultOriginCode} → ${item.code}</small>${icon('plus')}</button>`).join('')}</div><button id="custom-route" class="add-watch" type="button">${icon('plus')} ${t('customRoute')}</button></section>`;
   document.querySelectorAll('[data-edit-watch]').forEach((button) => button.addEventListener('click', () => openTracking(null, '', active.find((item) => item.id === Number(button.dataset.editWatch)))));
@@ -403,6 +428,7 @@ function openRoutePicker() {
 }
 
 function renderProfile() {
+  if (state.sessionExpired) { renderSessionExpired(); return; }
   applyDocumentLanguage(); state.screen = 'tabs'; showTabs(true); setActiveNav(); const user = state.profile; const title = user.firstName ?? user.username ?? t('user'); const active = state.subscriptions.filter((item) => item.isActive).length;
   const savings = user.trackedSavings?.amount ?? 0;
   content.innerHTML = `<section class="screen profile-screen"><header><div class="brand">${t('profile')}</div><h1>${t('settings')}</h1></header><div class="profile-person"><div class="avatar">${escapeHtml(title.slice(0, 1).toUpperCase())}</div><div><div class="profile-name">${escapeHtml(title)}</div><div class="profile-source">${user.username ? `@${escapeHtml(user.username)}` : t('telegramAccount')}</div></div></div><div class="profile-stats"><span><b>${active}</b><small>${t('active')}</small></span><span><b>${formatPrice(savings)}</b><small>${t('potentialSavings')}</small></span></div><div class="section-label">${t('searchSettings')}</div><div class="settings-list"><button type="button" data-profile-sheet="origin"><span>${t('originCity')}</span><b>${escapeHtml(originName(user.defaultOriginCode))}</b></button><button type="button" data-profile-sheet="class"><span>${t('class')}</span><b>${className(user.preferredTripClass)}</b></button><div class="toggle-row"><span><b>${t('defaultBaggage')}</b><small>${t('newTracking')}</small></span><button class="switch ${user.baggageRequired ? 'active' : ''}" type="button" data-profile-toggle="baggageRequired"></button></div></div><div class="section-label">${t('notifications')}</div><div class="settings-list"><div class="toggle-row"><span><b>${t('instantDrop')}</b><small>${t('instantDropHelp')}</small></span><button class="switch ${user.instantNotificationsEnabled ? 'active' : ''}" type="button" data-profile-toggle="instantNotificationsEnabled"></button></div><div class="toggle-row"><span><b>${t('morningDigest')}</b><small>${t('digestHelp')}</small></span><button class="switch ${user.morningDigestEnabled ? 'active' : ''}" type="button" data-profile-toggle="morningDigestEnabled"></button></div><div class="toggle-row"><span><b>${t('quietHours')}</b><small>${minutesToTime(user.quietStartMinute)} — ${minutesToTime(user.quietEndMinute)}</small></span><button class="switch ${user.quietHoursEnabled ? 'active' : ''}" type="button" data-profile-toggle="quietHoursEnabled"></button></div><button type="button" data-profile-sheet="quiet"><span>${t('quietPeriod')}</span><b>${minutesToTime(user.quietStartMinute)} — ${minutesToTime(user.quietEndMinute)}</b></button></div><button id="share-app" class="share-card" type="button"><span class="cta-icon">${icon('arrow-up-right')}</span><span><b>${t('shareFriends')}</b><small>${t('invited', { count: user.referralCount ?? 0 })}</small></span></button><div class="section-label">${t('language')}</div><div class="segments"><button class="segment ${user.languageCode === 'ru' ? 'active' : ''}" type="button" data-profile-language="ru">Русский</button><button class="segment ${user.languageCode === 'uz' ? 'active' : ''}" type="button" data-profile-language="uz">O‘zbekcha</button></div><p class="autosave-copy">${t('autosave')}</p></section>`;

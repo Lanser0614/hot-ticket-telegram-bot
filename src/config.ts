@@ -117,16 +117,19 @@ export function loadAdminConfig(input: NodeJS.ProcessEnv): AdminConfig {
 }
 
 export function loadWebConfig(input: NodeJS.ProcessEnv): WebConfig {
+  const configuredAuthMaxAgeSeconds = boundedInteger(
+    input.MINIAPP_AUTH_MAX_AGE_SECONDS,
+    86_400,
+    60,
+    604_800,
+    'MINIAPP_AUTH_MAX_AGE_SECONDS'
+  );
   return {
     host: input.WEB_HOST?.trim() || '127.0.0.1',
     port: boundedInteger(input.WEB_PORT, 8081, 1, 65_535, 'WEB_PORT'),
-    authMaxAgeSeconds: boundedInteger(
-      input.MINIAPP_AUTH_MAX_AGE_SECONDS,
-      900,
-      60,
-      86_400,
-      'MINIAPP_AUTH_MAX_AGE_SECONDS'
-    )
+    // Telegram keeps initData constant while a Mini App is open. A shorter
+    // lifetime turns an otherwise active WebView into an unauthorized session.
+    authMaxAgeSeconds: Math.max(86_400, configuredAuthMaxAgeSeconds)
   };
 }
 

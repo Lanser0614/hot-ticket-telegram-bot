@@ -98,7 +98,7 @@ sudo ./deploy/scripts/setup-vds.sh --enable-admin
 | `PUBLIC_BASE_URL` | optional HTTPS |
 | `WEB_HOST` | `127.0.0.1` |
 | `WEB_PORT` | `8081` |
-| `MINIAPP_AUTH_MAX_AGE_SECONDS` | `900` |
+| `MINIAPP_AUTH_MAX_AGE_SECONDS` | `86400` (минимум одни сутки) |
 | `CLICK_SIGNING_SECRET` | optional, минимум 32 символа |
 | `AFFILIATE_MARKER` | optional |
 | `AFFILIATE_LINK_TEMPLATE` | Aviasales search template |

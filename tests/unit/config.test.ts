@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { loadVdsConfig } from '../../src/config.js';
+import { loadVdsConfig, loadWebConfig } from '../../src/config.js';
 
 const baseEnvironment = {
   TELEGRAM_BOT_TOKEN: '123:secret',
@@ -55,5 +55,13 @@ describe('VDS config', () => {
     }
     expect(message).not.toContain(token);
     expect(message).toContain('HTTPS');
+  });
+});
+
+describe('Mini App web config', () => {
+  it('держит Telegram-сессию доступной минимум сутки', () => {
+    expect(loadWebConfig({}).authMaxAgeSeconds).toBe(86_400);
+    expect(loadWebConfig({ MINIAPP_AUTH_MAX_AGE_SECONDS: '900' }).authMaxAgeSeconds).toBe(86_400);
+    expect(loadWebConfig({ MINIAPP_AUTH_MAX_AGE_SECONDS: '172800' }).authMaxAgeSeconds).toBe(172_800);
   });
 });
