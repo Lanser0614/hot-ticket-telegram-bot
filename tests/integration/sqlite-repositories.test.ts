@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports.js';
+import { dateInTimeZone } from '../../src/domain/dates.js';
 import type { Ticket } from '../../src/domain/ticket.js';
 import { createRouteKey } from '../../src/domain/route-price.js';
 import { UZBEKISTAN_ORIGIN_CODES } from '../../src/domain/locations.js';
@@ -353,7 +354,7 @@ describe('ApplicationRepositories on SQLite', () => {
       price: 1_850_000,
       observedAt: now
     });
-    const day = now.toISOString().slice(0, 10);
+    const day = dateInTimeZone(now, 'Asia/Tashkent');
     await repositories.rebuildDailyAggregate(routeKey, day, now);
 
     const stats = await new SqliteAdminRepository(database).getStats();

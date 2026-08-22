@@ -225,7 +225,7 @@ export class SqliteAdminRepository implements AdminRepository {
           max(max_price) AS max_price,
           sum(sample_count) AS sample_count
         FROM route_price_daily
-        WHERE day >= date('now', '-29 days')
+        WHERE day >= date('now', '+5 hours', '-29 days')
         GROUP BY day
         ORDER BY day ASC
       `),
@@ -240,7 +240,7 @@ export class SqliteAdminRepository implements AdminRepository {
           sum(sample_count) AS sample_count,
           count(*) AS observed_days
         FROM route_price_daily
-        WHERE day >= date('now', '-29 days')
+        WHERE day >= date('now', '+5 hours', '-29 days')
         GROUP BY origin_code, destination_code, trip_class
         ORDER BY sample_count DESC, average_price ASC
         LIMIT 12
