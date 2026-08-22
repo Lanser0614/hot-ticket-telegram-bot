@@ -18,7 +18,7 @@ const state = {
   view: 'home', screen: 'tabs', profile: null, deals: [], destinations: [], subscriptions: [],
   dealsNextCursor: null, dealsLoadingMore: false, selectedTicket: null, history: [], historyRange: 30,
   homeSearch: '', homeSearchDestinationCode: null, homeSuggestions: [], homeSuggestionsQuery: '', homeSearchActiveIndex: -1,
-  homeScopedDeals: null, homeScopedNextCursor: null, homeScopedLoadingMore: false,
+  homeScopedDestinationCode: null, homeScopedDeals: null, homeScopedNextCursor: null, homeScopedLoadingMore: false,
   homeSort: 'best', homeFilters: { directOnly: false, maxPrice: null, baggageRequired: false },
   homeSearchTimer: null, sheetForm: null, toastTimer: null
 };
@@ -145,7 +145,7 @@ function searchDestinationCodes(query) {
 }
 function filteredDeals() {
   const query = normalizeSearch(state.homeSearch); const filters = state.homeFilters; const destinationCodes = searchDestinationCodes(query);
-  const source = state.homeSearchDestinationCode && state.homeScopedDeals !== null ? state.homeScopedDeals : state.deals;
+  const source = state.homeScopedDestinationCode && state.homeScopedDeals !== null ? state.homeScopedDeals : state.deals;
   const items = source.filter((ticket) => {
     const haystack = normalizeSearch(`${ticket.destinationName} ${ticket.destinationCode} ${ticket.originName} ${ticket.originCode}`);
     const matchesSearch = state.homeSearchDestinationCode
@@ -159,15 +159,21 @@ function filteredDeals() {
 }
 async function loadDealsForSearch(query) {
   const normalizedQuery = normalizeSearch(query); if (!normalizedQuery) return;
-  const codes = [...searchDestinationCodes(normalizedQuery)].filter((code) => !state.deals.some((ticket) => ticket.destinationCode === code)).slice(0, 4);
+  const codes = [...searchDestinationCodes(normalizedQuery)].slice(0, 4);
   if (!codes.length) return;
-  const results = await Promise.all(codes.map((code) => api(`/api/v1/deals?sort=best&limit=20&destination=${encodeURIComponent(code)}`)));
+  if (codes.length === 1) {
+    state.homeScopedDestinationCode = codes[0]; await loadScopedDestinationDeals(codes[0]); return;
+  }
+  state.homeScopedDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+  const missingCodes = codes.filter((code) => !state.deals.some((ticket) => ticket.destinationCode === code));
+  if (!missingCodes.length) return;
+  const results = await Promise.all(missingCodes.map((code) => api(`/api/v1/deals?sort=best&limit=20&destination=${encodeURIComponent(code)}`)));
   const ids = new Set(state.deals.map((ticket) => ticket.id));
   for (const result of results) for (const ticket of result.items) if (!ids.has(ticket.id)) { ids.add(ticket.id); state.deals.push(ticket); }
 }
-async function loadSelectedDestinationDeals(destinationCode) {
+async function loadScopedDestinationDeals(destinationCode) {
   const result = await api(`/api/v1/deals?sort=${encodeURIComponent(state.homeSort)}&limit=20&destination=${encodeURIComponent(destinationCode)}`);
-  if (state.homeSearchDestinationCode !== destinationCode) return;
+  if (state.homeScopedDestinationCode !== destinationCode) return;
   state.homeScopedDeals = result.items; state.homeScopedNextCursor = result.nextCursor;
 }
 async function loadCitySuggestions(query) {
@@ -206,7 +212,7 @@ function renderHome() {
   }
   const discount = percentBelow(hero); const movers = visibleDeals.slice(1, 2); const listDeals = visibleDeals.slice(1);
   const sampleDays = hero.dealScore?.sampleDays ?? 30;
-  const scopedResult = state.homeSearchDestinationCode && state.homeScopedDeals !== null;
+  const scopedResult = state.homeScopedDestinationCode && state.homeScopedDeals !== null;
   const nextCursor = scopedResult ? state.homeScopedNextCursor : state.dealsNextCursor;
   const loadingMore = scopedResult ? state.homeScopedLoadingMore : state.dealsLoadingMore;
   const dayWord = sampleDays % 10 === 1 && sampleDays % 100 !== 11 ? 'день' : sampleDays % 10 >= 2 && sampleDays % 10 <= 4 && (sampleDays % 100 < 12 || sampleDays % 100 > 14) ? 'дня' : 'дней';
@@ -216,8 +222,8 @@ function renderHome() {
   document.querySelector('#more-movers')?.addEventListener('click', () => document.querySelector('#all-hot-tickets')?.scrollIntoView({ behavior: 'smooth' }));
   document.querySelector('#sort-deals')?.addEventListener('click', async () => {
     state.homeSort = state.homeSort === 'best' ? 'cheapest' : 'best';
-    if (state.homeSearchDestinationCode) {
-      try { await loadSelectedDestinationDeals(state.homeSearchDestinationCode); }
+    if (state.homeScopedDestinationCode) {
+      try { await loadScopedDestinationDeals(state.homeScopedDestinationCode); }
       catch (error) { showToast(error instanceof Error ? error.message : t('failedLoad')); }
     }
     renderHome();
@@ -230,7 +236,8 @@ function bindHomeControls() {
   document.querySelector('#filter-deals')?.addEventListener('click', openDealsFilters);
   const searchInput = document.querySelector('#deal-search');
   searchInput?.addEventListener('input', (event) => {
-    state.homeSearch = event.target.value; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+    state.homeSearch = event.target.value; state.homeSearchDestinationCode = null; state.homeScopedDestinationCode = null;
+    state.homeScopedDeals = null; state.homeScopedNextCursor = null;
     state.homeSearchActiveIndex = -1; globalThis.clearTimeout(state.homeSearchTimer);
     if (!normalizeSearch(state.homeSearch)) { state.homeSuggestions = []; state.homeSuggestionsQuery = ''; renderHome(); document.querySelector('#deal-search')?.focus(); return; }
     state.homeSearchTimer = globalThis.setTimeout(async () => {
@@ -251,34 +258,35 @@ function bindHomeControls() {
   });
   document.querySelectorAll('[data-search-city]').forEach((button) => button.addEventListener('click', async () => {
     state.homeSearch = button.dataset.searchName; state.homeSearchDestinationCode = button.dataset.searchCity;
-    state.homeScopedDeals = null; state.homeScopedNextCursor = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeSearchActiveIndex = -1; haptic();
-    try { await loadSelectedDestinationDeals(button.dataset.searchCity); }
+    state.homeScopedDestinationCode = button.dataset.searchCity; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+    state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeSearchActiveIndex = -1; haptic();
+    try { await loadScopedDestinationDeals(button.dataset.searchCity); }
     catch (error) { showToast(error instanceof Error ? error.message : t('failedLoad')); }
     renderHome();
   }));
   document.querySelectorAll('[data-quick-filter]').forEach((button) => button.addEventListener('click', () => {
     const key = button.dataset.quickFilter; state.homeFilters[key] = key === 'maxPrice' ? (state.homeFilters.maxPrice ? null : 2_000_000) : !state.homeFilters[key]; haptic(); renderHome();
   }));
-  document.querySelector('#reset-home-filters')?.addEventListener('click', () => { state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; renderHome(); });
+  document.querySelector('#reset-home-filters')?.addEventListener('click', () => { state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; renderHome(); });
 }
 
 async function refreshDeals() {
   try {
-    if (state.homeSearchDestinationCode) await loadSelectedDestinationDeals(state.homeSearchDestinationCode);
+    if (state.homeScopedDestinationCode) await loadScopedDestinationDeals(state.homeScopedDestinationCode);
     else { const result = await api('/api/v1/deals?sort=best&limit=20'); state.deals = result.items; state.dealsNextCursor = result.nextCursor; }
     haptic(); renderHome(); showToast(t('pricesUpdated'));
   }
   catch (error) { showToast(error instanceof Error ? error.message : t('failedRefresh')); }
 }
 async function loadMoreDeals() {
-  const scopedResult = state.homeSearchDestinationCode && state.homeScopedDeals !== null;
+  const scopedResult = state.homeScopedDestinationCode && state.homeScopedDeals !== null;
   const nextCursor = scopedResult ? state.homeScopedNextCursor : state.dealsNextCursor;
   if ((scopedResult ? state.homeScopedLoadingMore : state.dealsLoadingMore) || !nextCursor) return;
   const scrollTop = globalThis.scrollY;
   if (scopedResult) state.homeScopedLoadingMore = true; else state.dealsLoadingMore = true;
   renderHome();
   try {
-    const destination = scopedResult ? `&destination=${encodeURIComponent(state.homeSearchDestinationCode)}` : '';
+    const destination = scopedResult ? `&destination=${encodeURIComponent(state.homeScopedDestinationCode)}` : '';
     const result = await api(`/api/v1/deals?sort=${encodeURIComponent(scopedResult ? state.homeSort : 'best')}&limit=20&cursor=${encodeURIComponent(nextCursor)}${destination}`);
     const target = scopedResult ? state.homeScopedDeals : state.deals; const ids = new Set(target.map((ticket) => ticket.id));
     target.push(...result.items.filter((ticket) => !ids.has(ticket.id)));
@@ -410,7 +418,8 @@ async function saveProfileField(key, value) {
     if (key === 'languageCode') {
       applyDocumentLanguage(); const [deals, destinations, subscriptions] = await Promise.all([api('/api/v1/deals?sort=best&limit=20'), api('/api/v1/destinations'), api('/api/v1/subscriptions')]);
       state.deals = deals.items; state.dealsNextCursor = deals.nextCursor; state.destinations = destinations.items; state.subscriptions = subscriptions.items.filter((item) => item.isActive);
-      state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+      state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDestinationCode = null;
+      state.homeScopedDeals = null; state.homeScopedNextCursor = null;
       state.homeSuggestions = []; state.homeSuggestionsQuery = ''; renderProfile();
     }
     haptic(); showToast(t('saved'));
