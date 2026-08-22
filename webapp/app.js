@@ -18,6 +18,7 @@ const state = {
   view: 'home', screen: 'tabs', profile: null, deals: [], destinations: [], subscriptions: [],
   dealsNextCursor: null, dealsLoadingMore: false, selectedTicket: null, history: [], historyRange: 30,
   homeSearch: '', homeSearchDestinationCode: null, homeSuggestions: [], homeSuggestionsQuery: '', homeSearchActiveIndex: -1,
+  homeScopedDeals: null, homeScopedNextCursor: null, homeScopedLoadingMore: false,
   homeSort: 'best', homeFilters: { directOnly: false, maxPrice: null, baggageRequired: false },
   homeSearchTimer: null, sheetForm: null, toastTimer: null
 };
@@ -144,7 +145,8 @@ function searchDestinationCodes(query) {
 }
 function filteredDeals() {
   const query = normalizeSearch(state.homeSearch); const filters = state.homeFilters; const destinationCodes = searchDestinationCodes(query);
-  const items = state.deals.filter((ticket) => {
+  const source = state.homeSearchDestinationCode && state.homeScopedDeals !== null ? state.homeScopedDeals : state.deals;
+  const items = source.filter((ticket) => {
     const haystack = normalizeSearch(`${ticket.destinationName} ${ticket.destinationCode} ${ticket.originName} ${ticket.originCode}`);
     const matchesSearch = state.homeSearchDestinationCode
       ? ticket.destinationCode === state.homeSearchDestinationCode
@@ -162,6 +164,11 @@ async function loadDealsForSearch(query) {
   const results = await Promise.all(codes.map((code) => api(`/api/v1/deals?sort=best&limit=20&destination=${encodeURIComponent(code)}`)));
   const ids = new Set(state.deals.map((ticket) => ticket.id));
   for (const result of results) for (const ticket of result.items) if (!ids.has(ticket.id)) { ids.add(ticket.id); state.deals.push(ticket); }
+}
+async function loadSelectedDestinationDeals(destinationCode) {
+  const result = await api(`/api/v1/deals?sort=${encodeURIComponent(state.homeSort)}&limit=20&destination=${encodeURIComponent(destinationCode)}`);
+  if (state.homeSearchDestinationCode !== destinationCode) return;
+  state.homeScopedDeals = result.items; state.homeScopedNextCursor = result.nextCursor;
 }
 async function loadCitySuggestions(query) {
   const normalizedQuery = normalizeSearch(query);
@@ -199,12 +206,22 @@ function renderHome() {
   }
   const discount = percentBelow(hero); const movers = visibleDeals.slice(1, 2); const listDeals = visibleDeals.slice(1);
   const sampleDays = hero.dealScore?.sampleDays ?? 30;
+  const scopedResult = state.homeSearchDestinationCode && state.homeScopedDeals !== null;
+  const nextCursor = scopedResult ? state.homeScopedNextCursor : state.dealsNextCursor;
+  const loadingMore = scopedResult ? state.homeScopedLoadingMore : state.dealsLoadingMore;
   const dayWord = sampleDays % 10 === 1 && sampleDays % 100 !== 11 ? 'день' : sampleDays % 10 >= 2 && sampleDays % 10 <= 4 && (sampleDays % 100 < 12 || sampleDays % 100 > 14) ? 'дня' : 'дней';
   const dayLabel = language() === 'uz' ? `${sampleDays} kun` : `${sampleDays} ${dayWord}`;
-  content.innerHTML = `<section class="screen home-screen">${homeSearchAndFilters()}<article class="hero-card featured-hero"><div class="hero-label"><span>${t('bestNow')}</span>${discount ? `<b>${icon('flame')} ${t('belowUsual', { value: discount })}</b>` : ''}</div><button class="hero-main compact-hero" type="button" data-ticket="${hero.id}"><span><b>${escapeHtml(hero.originName)} → ${escapeHtml(hero.destinationName)}</b><small>${dateRange(hero)}</small></span><strong>${formatPrice(hero.price)} <small>${escapeHtml(hero.currencyCode)}</small></strong></button><p class="price-caption">${t('routePrices', { days: dayLabel })}</p>${heroHistoryScale(hero)}<div class="hero-actions"><button class="ghost-button primary-ghost" type="button" data-ticket="${hero.id}">${icon('ticket')} ${t('openTicket')}</button><button class="bell-button" type="button" data-track="${hero.id}" aria-label="${t('trackRoute')}">${icon('bell')}</button></div></article>${movers.length ? `<div class="section-heading mover-heading"><h2>${t('cheaper3days')}</h2><button id="more-movers" type="button">${t('more', { count: Math.max(0, visibleDeals.length - 1) })} ${icon('chevron-left')}</button></div><div class="mover-list compact-mover-list">${movers.map(moverRow).join('')}</div>` : ''}<div class="section-heading compact-ticket-heading"><h2>${t('allHotTickets')}</h2><button id="sort-deals" type="button">${state.homeSort === 'best' ? t('sortBest') : t('sortPrice')}</button></div>${listDeals.length ? `<div id="all-hot-tickets" class="compact-ticket-list">${listDeals.map(compactTicketRow).join('')}</div>` : `<div class="compact-list-empty">${t('noOtherTickets')}</div>`}${state.dealsNextCursor ? `<button id="load-more-deals" class="secondary load-more-deals" type="button" ${state.dealsLoadingMore ? 'disabled' : ''}>${state.dealsLoadingMore ? t('loading') : t('showMore')}</button>` : ''}</section>`;
+  content.innerHTML = `<section class="screen home-screen">${homeSearchAndFilters()}<article class="hero-card featured-hero"><div class="hero-label"><span>${t('bestNow')}</span>${discount ? `<b>${icon('flame')} ${t('belowUsual', { value: discount })}</b>` : ''}</div><button class="hero-main compact-hero" type="button" data-ticket="${hero.id}"><span><b>${escapeHtml(hero.originName)} → ${escapeHtml(hero.destinationName)}</b><small>${dateRange(hero)}</small></span><strong>${formatPrice(hero.price)} <small>${escapeHtml(hero.currencyCode)}</small></strong></button><p class="price-caption">${t('routePrices', { days: dayLabel })}</p>${heroHistoryScale(hero)}<div class="hero-actions"><button class="ghost-button primary-ghost" type="button" data-ticket="${hero.id}">${icon('ticket')} ${t('openTicket')}</button><button class="bell-button" type="button" data-track="${hero.id}" aria-label="${t('trackRoute')}">${icon('bell')}</button></div></article>${movers.length ? `<div class="section-heading mover-heading"><h2>${t('cheaper3days')}</h2><button id="more-movers" type="button">${t('more', { count: Math.max(0, visibleDeals.length - 1) })} ${icon('chevron-left')}</button></div><div class="mover-list compact-mover-list">${movers.map(moverRow).join('')}</div>` : ''}<div class="section-heading compact-ticket-heading"><h2>${t('allHotTickets')}</h2><button id="sort-deals" type="button">${state.homeSort === 'best' ? t('sortBest') : t('sortPrice')}</button></div>${listDeals.length ? `<div id="all-hot-tickets" class="compact-ticket-list">${listDeals.map(compactTicketRow).join('')}</div>` : `<div class="compact-list-empty">${t('noOtherTickets')}</div>`}${nextCursor ? `<button id="load-more-deals" class="secondary load-more-deals" type="button" ${loadingMore ? 'disabled' : ''}>${loadingMore ? t('loading') : t('showMore')}</button>` : ''}</section>`;
   bindTicketButtons(); document.querySelectorAll('[data-track]').forEach((button) => button.addEventListener('click', () => openTracking(Number(button.dataset.track))));
   document.querySelector('#more-movers')?.addEventListener('click', () => document.querySelector('#all-hot-tickets')?.scrollIntoView({ behavior: 'smooth' }));
-  document.querySelector('#sort-deals')?.addEventListener('click', () => { state.homeSort = state.homeSort === 'best' ? 'cheapest' : 'best'; renderHome(); });
+  document.querySelector('#sort-deals')?.addEventListener('click', async () => {
+    state.homeSort = state.homeSort === 'best' ? 'cheapest' : 'best';
+    if (state.homeSearchDestinationCode) {
+      try { await loadSelectedDestinationDeals(state.homeSearchDestinationCode); }
+      catch (error) { showToast(error instanceof Error ? error.message : t('failedLoad')); }
+    }
+    renderHome();
+  });
   document.querySelector('#load-more-deals')?.addEventListener('click', loadMoreDeals); bindHomeControls();
 }
 
@@ -213,7 +230,8 @@ function bindHomeControls() {
   document.querySelector('#filter-deals')?.addEventListener('click', openDealsFilters);
   const searchInput = document.querySelector('#deal-search');
   searchInput?.addEventListener('input', (event) => {
-    state.homeSearch = event.target.value; state.homeSearchDestinationCode = null; state.homeSearchActiveIndex = -1; globalThis.clearTimeout(state.homeSearchTimer);
+    state.homeSearch = event.target.value; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+    state.homeSearchActiveIndex = -1; globalThis.clearTimeout(state.homeSearchTimer);
     if (!normalizeSearch(state.homeSearch)) { state.homeSuggestions = []; state.homeSuggestionsQuery = ''; renderHome(); document.querySelector('#deal-search')?.focus(); return; }
     state.homeSearchTimer = globalThis.setTimeout(async () => {
       const query = state.homeSearch;
@@ -233,29 +251,43 @@ function bindHomeControls() {
   });
   document.querySelectorAll('[data-search-city]').forEach((button) => button.addEventListener('click', async () => {
     state.homeSearch = button.dataset.searchName; state.homeSearchDestinationCode = button.dataset.searchCity;
-    state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeSearchActiveIndex = -1; haptic();
-    try { await loadDealsForSearch(state.homeSearch); } catch { /* The selected city is still applied locally. */ }
+    state.homeScopedDeals = null; state.homeScopedNextCursor = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeSearchActiveIndex = -1; haptic();
+    try { await loadSelectedDestinationDeals(button.dataset.searchCity); }
+    catch (error) { showToast(error instanceof Error ? error.message : t('failedLoad')); }
     renderHome();
   }));
   document.querySelectorAll('[data-quick-filter]').forEach((button) => button.addEventListener('click', () => {
     const key = button.dataset.quickFilter; state.homeFilters[key] = key === 'maxPrice' ? (state.homeFilters.maxPrice ? null : 2_000_000) : !state.homeFilters[key]; haptic(); renderHome();
   }));
-  document.querySelector('#reset-home-filters')?.addEventListener('click', () => { state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; renderHome(); });
+  document.querySelector('#reset-home-filters')?.addEventListener('click', () => { state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; renderHome(); });
 }
 
 async function refreshDeals() {
-  try { const result = await api('/api/v1/deals?sort=best&limit=20'); state.deals = result.items; state.dealsNextCursor = result.nextCursor; haptic(); renderHome(); showToast(t('pricesUpdated')); }
+  try {
+    if (state.homeSearchDestinationCode) await loadSelectedDestinationDeals(state.homeSearchDestinationCode);
+    else { const result = await api('/api/v1/deals?sort=best&limit=20'); state.deals = result.items; state.dealsNextCursor = result.nextCursor; }
+    haptic(); renderHome(); showToast(t('pricesUpdated'));
+  }
   catch (error) { showToast(error instanceof Error ? error.message : t('failedRefresh')); }
 }
 async function loadMoreDeals() {
-  if (state.dealsLoadingMore || !state.dealsNextCursor) return;
-  const scrollTop = globalThis.scrollY; state.dealsLoadingMore = true; renderHome();
+  const scopedResult = state.homeSearchDestinationCode && state.homeScopedDeals !== null;
+  const nextCursor = scopedResult ? state.homeScopedNextCursor : state.dealsNextCursor;
+  if ((scopedResult ? state.homeScopedLoadingMore : state.dealsLoadingMore) || !nextCursor) return;
+  const scrollTop = globalThis.scrollY;
+  if (scopedResult) state.homeScopedLoadingMore = true; else state.dealsLoadingMore = true;
+  renderHome();
   try {
-    const result = await api(`/api/v1/deals?sort=best&limit=20&cursor=${encodeURIComponent(state.dealsNextCursor)}`);
-    const ids = new Set(state.deals.map((ticket) => ticket.id));
-    state.deals.push(...result.items.filter((ticket) => !ids.has(ticket.id))); state.dealsNextCursor = result.nextCursor;
+    const destination = scopedResult ? `&destination=${encodeURIComponent(state.homeSearchDestinationCode)}` : '';
+    const result = await api(`/api/v1/deals?sort=${encodeURIComponent(scopedResult ? state.homeSort : 'best')}&limit=20&cursor=${encodeURIComponent(nextCursor)}${destination}`);
+    const target = scopedResult ? state.homeScopedDeals : state.deals; const ids = new Set(target.map((ticket) => ticket.id));
+    target.push(...result.items.filter((ticket) => !ids.has(ticket.id)));
+    if (scopedResult) state.homeScopedNextCursor = result.nextCursor; else state.dealsNextCursor = result.nextCursor;
   } catch (error) { showToast(error instanceof Error ? error.message : t('failedLoad')); }
-  finally { state.dealsLoadingMore = false; renderHome(); globalThis.requestAnimationFrame(() => globalThis.scrollTo({ top: scrollTop })); }
+  finally {
+    if (scopedResult) state.homeScopedLoadingMore = false; else state.dealsLoadingMore = false;
+    renderHome(); globalThis.requestAnimationFrame(() => globalThis.scrollTo({ top: scrollTop }));
+  }
 }
 function moverRow(ticket) {
   const median = ticket.dealScore?.medianPrice ?? ticket.price; const advantage = Math.max(0, median - ticket.price);
@@ -378,7 +410,8 @@ async function saveProfileField(key, value) {
     if (key === 'languageCode') {
       applyDocumentLanguage(); const [deals, destinations, subscriptions] = await Promise.all([api('/api/v1/deals?sort=best&limit=20'), api('/api/v1/destinations'), api('/api/v1/subscriptions')]);
       state.deals = deals.items; state.dealsNextCursor = deals.nextCursor; state.destinations = destinations.items; state.subscriptions = subscriptions.items.filter((item) => item.isActive);
-      state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeSuggestions = []; state.homeSuggestionsQuery = ''; renderProfile();
+      state.homeSearch = ''; state.homeSearchDestinationCode = null; state.homeScopedDeals = null; state.homeScopedNextCursor = null;
+      state.homeSuggestions = []; state.homeSuggestionsQuery = ''; renderProfile();
     }
     haptic(); showToast(t('saved'));
   }
