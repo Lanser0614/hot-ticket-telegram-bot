@@ -104,6 +104,8 @@ describe('Mini App web server', () => {
       ),
       tickets: repositories,
       clicks: repositories,
+      routePrices: repositories,
+      subscriptions: repositories,
       clock,
       logger: new SilentLogger(),
       telegramBotToken: botToken,

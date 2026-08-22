@@ -1,12 +1,17 @@
-import type { StoredTicket, TicketSort, User } from './models.js';
+import type { StoredTicket, TicketSort, TrackedSavings, User } from './models.js';
 import type {
   Clock,
+  ClickRepository,
   RoutePriceRepository,
   TicketRepository,
   TrackedLinkFactory,
   UserRepository
 } from './ports.js';
-import type { SubscriptionService, CreateSubscriptionInput } from './subscriptions.js';
+import type {
+  SubscriptionService,
+  CreateSubscriptionInput,
+  UpdateSubscriptionInput
+} from './subscriptions.js';
 import { calculateDealScore, type DealScore } from '../domain/deal-score.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { assertIsoDate, dateInTimeZone } from '../domain/dates.js';
@@ -16,6 +21,7 @@ import { assertMoney } from '../domain/money.js';
 import { createRouteKey, type RouteDailyPoint } from '../domain/route-price.js';
 import type { Subscription } from '../domain/subscription.js';
 import type { TripClass } from '../domain/travel-preferences.js';
+import type { ReferralService } from './referrals.js';
 
 export type MiniAppDealSort = 'best' | 'cheapest' | 'recent' | 'departing_soon';
 
@@ -48,6 +54,17 @@ export interface MiniAppTicketView {
   readonly lastSeenAt: string;
   readonly dealScore: DealScore;
   readonly openUrl: string;
+  readonly shareUrl: string | null;
+}
+
+export interface MiniAppSubscriptionView extends Subscription {
+  readonly currentTicket: MiniAppTicketView | null;
+}
+
+export interface MiniAppProfileView extends User {
+  readonly trackedSavings: TrackedSavings;
+  readonly referralCount: number;
+  readonly referralShareUrl: string | null;
 }
 
 interface DecodedCursor {
@@ -96,7 +113,9 @@ export class MiniAppService {
     private readonly routePrices: RoutePriceRepository,
     private readonly subscriptions: SubscriptionService,
     private readonly links: TrackedLinkFactory,
-    private readonly clock: Clock
+    private readonly clock: Clock,
+    private readonly clicks?: ClickRepository,
+    private readonly referrals?: ReferralService
   ) {}
 
   public async requireUser(telegramUserId: number): Promise<User> {
@@ -150,11 +169,29 @@ export class MiniAppService {
     };
   }
 
-  public async getTicket(telegramUserId: number, ticketId: number): Promise<MiniAppTicketView> {
+  public async getTicket(
+    telegramUserId: number,
+    ticketId: number,
+    subscriptionId: number | null = null
+  ): Promise<MiniAppTicketView> {
     const user = await this.requireUser(telegramUserId);
     const ticket = await this.tickets.findTicketById(ticketId);
     if (ticket === null || !ticket.isActive) throw new ValidationError('Билет не найден');
-    return this.ticketView(ticket, user.id, 'miniapp_card', 30, userLanguage(user.languageCode));
+    if (subscriptionId !== null) {
+      const subscription = (await this.subscriptions.listForUser(user.id))
+        .find((item) => item.id === subscriptionId) ?? null;
+      if (subscription === null || !this.matchesWatchlistContext(ticket, subscription)) {
+        throw new ValidationError('Билет не соответствует отслеживанию');
+      }
+    }
+    return this.ticketView(
+      ticket,
+      user.id,
+      subscriptionId === null ? 'miniapp_card' : 'miniapp_watchlist',
+      30,
+      userLanguage(user.languageCode),
+      subscriptionId
+    );
   }
 
   public async getHistory(
@@ -189,9 +226,38 @@ export class MiniAppService {
     return codes.map((code) => ({ code, name: getLocalizedLocationName(code, language) ?? code }));
   }
 
-  public async listSubscriptions(telegramUserId: number): Promise<readonly Subscription[]> {
+  public async listSubscriptions(telegramUserId: number): Promise<readonly MiniAppSubscriptionView[]> {
     const user = await this.requireUser(telegramUserId);
-    return this.subscriptions.listForUser(user.id);
+    const subscriptions = await this.subscriptions.listForUser(user.id);
+    return Promise.all(subscriptions.map(async (subscription) => {
+      if (!subscription.isActive) return { ...subscription, currentTicket: null };
+      const candidates = await this.tickets.listActive({
+        originCode: subscription.originCode,
+        currencyCode: subscription.currencyCode,
+        departureDateFrom: subscription.departureDateFrom,
+        departureDateTo: subscription.departureDateTo,
+        destinationCode: subscription.destinationCode,
+        maxPrice: null,
+        directOnly: subscription.directOnly,
+        tripClass: subscription.tripClass,
+        baggageRequired: subscription.baggageRequired,
+        sort: 'price_asc',
+        limit: 100,
+        offset: 0
+      });
+      const current = candidates.find((ticket) => this.matchesWatchlistContext(ticket, subscription)) ?? null;
+      return {
+        ...subscription,
+        currentTicket: current === null ? null : await this.ticketView(
+          current,
+          user.id,
+          'miniapp_watchlist',
+          30,
+          userLanguage(user.languageCode),
+          subscription.id
+        )
+      };
+    }));
   }
 
   public async createSubscription(
@@ -210,8 +276,29 @@ export class MiniAppService {
     return this.subscriptions.deactivateForUser(user.id, subscriptionId);
   }
 
-  public async getProfile(telegramUserId: number): Promise<User> {
-    return this.requireUser(telegramUserId);
+  public async updateSubscription(
+    telegramUserId: number,
+    subscriptionId: number,
+    input: UpdateSubscriptionInput
+  ): Promise<Subscription | null> {
+    const user = await this.requireUser(telegramUserId);
+    return this.subscriptions.updateForUser(user.id, subscriptionId, input);
+  }
+
+  public async getProfile(telegramUserId: number): Promise<MiniAppProfileView> {
+    const user = await this.requireUser(telegramUserId);
+    const since = new Date(this.clock.now().getTime() - 90 * 86_400_000);
+    const [amount, referralCount, referralShareUrl] = await Promise.all([
+      this.clicks?.getTrackedSavings(user.id, 'UZS', since) ?? Promise.resolve(0),
+      this.referrals?.countForUser(user.id) ?? Promise.resolve(0),
+      this.referrals?.createShareUrl(user.id, null) ?? Promise.resolve(null)
+    ]);
+    return {
+      ...user,
+      trackedSavings: { amount, currency: 'UZS', periodDays: 90 },
+      referralCount,
+      referralShareUrl
+    };
   }
 
   public async completeOnboarding(
@@ -235,36 +322,73 @@ export class MiniAppService {
     };
   }
 
-  public async updateProfile(
-    telegramUserId: number,
-    tripClass: TripClass,
-    baggageRequired: boolean,
-    defaultOriginCode: string,
-    languageCode: 'ru' | 'uz'
-  ): Promise<User> {
+  public async updateProfile(telegramUserId: number, input: {
+    readonly preferredTripClass?: TripClass | undefined;
+    readonly baggageRequired?: boolean | undefined;
+    readonly defaultOriginCode?: string | undefined;
+    readonly languageCode?: 'ru' | 'uz' | undefined;
+    readonly instantNotificationsEnabled?: boolean | undefined;
+    readonly morningDigestEnabled?: boolean | undefined;
+    readonly quietHoursEnabled?: boolean | undefined;
+    readonly quietStartMinute?: number | undefined;
+    readonly quietEndMinute?: number | undefined;
+  }): Promise<User> {
     const user = await this.requireUser(telegramUserId);
-    const originCode = normalizeIataCode(defaultOriginCode);
+    const originCode = input.defaultOriginCode === undefined
+      ? user.defaultOriginCode
+      : normalizeIataCode(input.defaultOriginCode);
     if (!isUzbekistanOrigin(originCode)) {
       throw new ValidationError('Город вылета должен находиться в Узбекистане');
     }
-    await this.users.updateTicketPreferences(user.id, tripClass, baggageRequired, this.clock.now());
-    await this.users.updateDefaultOrigin(user.id, originCode, this.clock.now());
-    await this.users.updateLanguage(user.id, languageCode, this.clock.now());
+    const tripClass = input.preferredTripClass ?? user.preferredTripClass;
+    const baggageRequired = input.baggageRequired ?? user.baggageRequired;
+    const languageCode = input.languageCode ?? user.languageCode;
+    if (languageCode !== 'ru' && languageCode !== 'uz') {
+      throw new ValidationError('Поддерживаются только русский и узбекский языки');
+    }
+    const minute = (value: number | undefined, fallback: number): number => {
+      const result = value ?? fallback;
+      if (!Number.isSafeInteger(result) || result < 0 || result > 1439) {
+        throw new ValidationError('Некорректное время тишины');
+      }
+      return result;
+    };
+    const now = this.clock.now();
+    if (tripClass !== user.preferredTripClass || baggageRequired !== user.baggageRequired) {
+      await this.users.updateTicketPreferences(user.id, tripClass, baggageRequired, now);
+    }
+    if (originCode !== user.defaultOriginCode) {
+      await this.users.updateDefaultOrigin(user.id, originCode, now);
+    }
+    if (languageCode !== user.languageCode) {
+      await this.users.updateLanguage(user.id, languageCode, now);
+    }
+    const notificationPreferences = {
+      instantNotificationsEnabled: input.instantNotificationsEnabled ?? user.instantNotificationsEnabled,
+      morningDigestEnabled: input.morningDigestEnabled ?? user.morningDigestEnabled,
+      quietHoursEnabled: input.quietHoursEnabled ?? user.quietHoursEnabled,
+      quietStartMinute: minute(input.quietStartMinute, user.quietStartMinute),
+      quietEndMinute: minute(input.quietEndMinute, user.quietEndMinute)
+    };
+    await this.users.updateNotificationPreferences(user.id, notificationPreferences, now);
     return {
       ...user,
       preferredTripClass: tripClass,
       baggageRequired,
       defaultOriginCode: originCode,
-      languageCode
+      languageCode,
+      ...notificationPreferences,
+      updatedAt: now
     };
   }
 
   private async ticketView(
     ticket: StoredTicket,
     userId: number,
-    source: 'miniapp_deals' | 'miniapp_card',
+    source: 'miniapp_deals' | 'miniapp_card' | 'miniapp_watchlist',
     historyDays: number,
-    language: 'ru' | 'uz'
+    language: 'ru' | 'uz',
+    subscriptionId: number | null = null
   ): Promise<MiniAppTicketView> {
     const routeKey = createRouteKey(ticket.originCode, ticket.destinationCode, ticket.tripClass);
     const history = await this.routePrices.getDailySeries(routeKey, historyDays, this.clock.now());
@@ -288,8 +412,22 @@ export class MiniAppService {
         ticket,
         source,
         userId,
-        subscriptionId: null
-      })
+        subscriptionId
+      }),
+      shareUrl: await this.referrals?.createShareUrl(userId, ticket.id) ?? null
     };
+  }
+
+  private matchesWatchlistContext(ticket: StoredTicket, subscription: Subscription): boolean {
+    return subscription.isActive
+      && ticket.originCode === subscription.originCode
+      && ticket.currencyCode === subscription.currencyCode
+      && (subscription.destinationCode === null || ticket.destinationCode === subscription.destinationCode)
+      && ticket.departureDate >= subscription.departureDateFrom
+      && ticket.departureDate <= subscription.departureDateTo
+      && (!subscription.directOnly || ticket.isDirect)
+      && (!subscription.roundTripOnly || ticket.returnDate !== null)
+      && (!subscription.baggageRequired || ticket.hasBaggage)
+      && ticket.tripClass === subscription.tripClass;
   }
 }

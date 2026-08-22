@@ -21,6 +21,7 @@ describe('VDS config', () => {
     const config = loadVdsConfig({
       ...baseEnvironment,
       DATABASE_PATH: '/opt/hot-ticket-bot/data/database.sqlite',
+      TELEGRAM_BOT_USERNAME: '@HotTicketBot',
       TELEGRAM_POLL_TIMEOUT_SECONDS: '25',
       TELEGRAM_UPDATE_MAX_ATTEMPTS: '5'
     });
@@ -28,13 +29,15 @@ describe('VDS config', () => {
     expect(config.databasePath).toBe('/opt/hot-ticket-bot/data/database.sqlite');
     expect(config.pollTimeoutSeconds).toBe(25);
     expect(config.updateMaxAttempts).toBe(5);
+    expect(config.telegramBotUsername).toBe('HotTicketBot');
   });
 
   it.each([
     [{ ...baseEnvironment, TELEGRAM_BOT_TOKEN: '' }, 'TELEGRAM_BOT_TOKEN'],
     [{ ...baseEnvironment, TELEGRAM_POLL_TIMEOUT_SECONDS: '0' }, 'TELEGRAM_POLL_TIMEOUT_SECONDS'],
     [{ ...baseEnvironment, TELEGRAM_POLL_TIMEOUT_SECONDS: '50.5' }, 'TELEGRAM_POLL_TIMEOUT_SECONDS'],
-    [{ ...baseEnvironment, TELEGRAM_UPDATE_MAX_ATTEMPTS: '6' }, 'TELEGRAM_UPDATE_MAX_ATTEMPTS']
+    [{ ...baseEnvironment, TELEGRAM_UPDATE_MAX_ATTEMPTS: '6' }, 'TELEGRAM_UPDATE_MAX_ATTEMPTS'],
+    [{ ...baseEnvironment, TELEGRAM_BOT_USERNAME: 'bad-name' }, 'TELEGRAM_BOT_USERNAME']
   ])('отклоняет некорректную настройку', (environment, setting) => {
     expect(() => loadVdsConfig(environment)).toThrow(setting);
   });

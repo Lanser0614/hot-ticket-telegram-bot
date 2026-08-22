@@ -90,6 +90,7 @@ function mapUser(row: Row): AdminUserRecord {
     isActive: asNumber(row.is_active) === 1,
     activeSubscriptions: asNumber(row.active_subscriptions),
     clicks30Days: asNumber(row.clicks_30d),
+    referralCount: asNumber(row.referral_count),
     createdAt: new Date(asNumber(row.created_at) * 1_000)
   };
 }
@@ -180,7 +181,10 @@ export class SqliteAdminRepository implements AdminRepository {
           COALESCE(SUM(CASE WHEN created_at >= unixepoch('now', '-30 days') THEN 1 ELSE 0 END), 0) AS new_30d,
           COALESCE(SUM(CASE WHEN EXISTS (
             SELECT 1 FROM subscriptions s WHERE s.user_id = users.id AND s.is_active = 1
-          ) THEN 1 ELSE 0 END), 0) AS with_subscriptions
+          ) THEN 1 ELSE 0 END), 0) AS with_subscriptions,
+          (SELECT count(*) FROM referrals) AS referrals_total,
+          (SELECT count(*) FROM referrals
+            WHERE attributed_at >= unixepoch('now', '-30 days')) AS referrals_30d
         FROM users
       `),
       this.db.get('SELECT count(*) AS count FROM subscriptions WHERE is_active = 1'),
@@ -198,7 +202,9 @@ export class SqliteAdminRepository implements AdminRepository {
           (SELECT count(*) FROM link_clicks c
             WHERE c.user_id = u.id
               AND c.user_agent_kind = 'human'
-              AND c.clicked_at >= unixepoch('now', '-30 days')) AS clicks_30d
+              AND c.clicked_at >= unixepoch('now', '-30 days')) AS clicks_30d,
+          (SELECT count(*) FROM referrals r
+            WHERE r.referrer_user_id = u.id) AS referral_count
         FROM users u
         ORDER BY u.created_at DESC, u.id DESC
         LIMIT 12
@@ -303,6 +309,8 @@ export class SqliteAdminRepository implements AdminRepository {
         new7Days: users === null ? 0 : asNumber(users.new_7d),
         new30Days: users === null ? 0 : asNumber(users.new_30d),
         withActiveSubscriptions: users === null ? 0 : asNumber(users.with_subscriptions),
+        referralsTotal: users === null ? 0 : asNumber(users.referrals_total),
+        referrals30Days: users === null ? 0 : asNumber(users.referrals_30d),
         recent: recentUsers.map(mapUser)
       },
       priceStats: {

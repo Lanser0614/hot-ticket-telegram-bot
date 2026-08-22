@@ -38,6 +38,7 @@ const subscription: Subscription = {
   directOnly: false,
   roundTripOnly: false,
   baggageRequired: false,
+  tripClass: 'economy',
   isActive: true
 };
 
@@ -75,8 +76,13 @@ describe('matchesSubscription', () => {
     )).toBe(true);
   });
 
-  it('игнорирует legacy baggage_required подписки', () => {
-    expect(matchesSubscription(ticket, { ...subscription, baggageRequired: true })).toBe(true);
+  it('применяет багаж и класс к конкретной подписке', () => {
+    expect(matchesSubscription(ticket, { ...subscription, baggageRequired: true })).toBe(false);
+    expect(matchesSubscription({ ...ticket, hasBaggage: true }, {
+      ...subscription,
+      baggageRequired: true
+    })).toBe(true);
+    expect(matchesSubscription(ticket, { ...subscription, tripClass: 'business' })).toBe(false);
   });
 
   it('проверяет границы диапазона включительно', () => {

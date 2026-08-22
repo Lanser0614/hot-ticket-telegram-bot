@@ -48,7 +48,7 @@ describe('SQLite migrations', () => {
     expect(await database.get('PRAGMA foreign_keys')).toEqual({ foreign_keys: 1 });
     expect(await database.get('PRAGMA busy_timeout')).toEqual({ timeout: 5_000 });
     expect(await database.get('SELECT count(*) AS count FROM schema_migrations'))
-      .toEqual({ count: 8 });
+      .toEqual({ count: 10 });
     expect(await database.get("SELECT name FROM sqlite_master WHERE name = 'app_state'"))
       .toEqual({ name: 'app_state' });
     expect(await database.get("SELECT name FROM sqlite_master WHERE name = 'destination_cache'"))
@@ -141,6 +141,58 @@ describe('SQLite migrations', () => {
     writeFileSync(migrationPath, 'CREATE TABLE changed (id INTEGER PRIMARY KEY);');
 
     expect(() => applyMigrations(database, customMigrations)).toThrow('изменена');
+    database.close();
+  });
+
+  it('сохраняет существующие переходы при расширении click schema', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hot-ticket-click-migration-'));
+    temporaryDirectories.push(root);
+    const customMigrations = join(root, 'migrations');
+    mkdirSync(customMigrations);
+    const firstNine = [
+      '001_initial.sql',
+      '002_fixed-tashkent-search.sql',
+      '003_round-trip.sql',
+      '004_subscription-round-trip.sql',
+      '005_destination-cache.sql',
+      '006_link-clicks.sql',
+      '007_route-price-history.sql',
+      '008_user-onboarding.sql',
+      '009_new-miniapp-ui.sql'
+    ];
+    for (const file of firstNine) {
+      writeFileSync(join(customMigrations, file), readFileSync(resolve('migrations', file), 'utf8'));
+    }
+    const database = openSqliteDatabase(join(root, 'database.sqlite'));
+    applyMigrations(database, customMigrations);
+    database.runSync(`
+      INSERT INTO link_clicks (
+        ticket_id, user_id, source, origin_code, destination_code,
+        departure_date, price, currency_code, subscription_id,
+        user_agent_kind, clicked_at
+      ) VALUES (
+        1, 1, 'miniapp_card', 'TAS', 'IST',
+        '2026-09-01', 1500000, 'UZS', NULL, 'human', 100
+      )
+    `);
+    writeFileSync(
+      join(customMigrations, '010_backend-completion.sql'),
+      readFileSync(resolve('migrations/010_backend-completion.sql'), 'utf8')
+    );
+    applyMigrations(database, customMigrations);
+
+    expect(await database.get(`
+      SELECT id, source, price, benchmark_price, estimated_savings
+      FROM link_clicks WHERE id = 1
+    `)).toEqual({
+      id: 1,
+      source: 'miniapp_card',
+      price: 1_500_000,
+      benchmark_price: null,
+      estimated_savings: null
+    });
+    expect(await database.get("SELECT name FROM sqlite_master WHERE name = 'notification_queue'"))
+      .toEqual({ name: 'notification_queue' });
     database.close();
   });
 });

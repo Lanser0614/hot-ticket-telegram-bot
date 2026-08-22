@@ -54,6 +54,12 @@ export class TicketService {
     return (await this.listPageForTelegramUser(telegramUserId, options)).tickets;
   }
 
+  public async findActiveById(ticketId: number): Promise<StoredTicket | null> {
+    if (!Number.isSafeInteger(ticketId) || ticketId <= 0) return null;
+    const ticket = await this.tickets.findTicketById(ticketId);
+    return ticket?.isActive === true ? ticket : null;
+  }
+
   public async listAvailableDestinations(
     telegramUserId: number,
     scope: DestinationScope

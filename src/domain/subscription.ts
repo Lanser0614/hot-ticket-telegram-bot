@@ -3,6 +3,7 @@ import { assertIsoDate, isDateInRange } from './dates.js';
 import { ValidationError } from './errors.js';
 import { assertMoney } from './money.js';
 import type { Ticket } from './ticket.js';
+import type { TripClass } from './travel-preferences.js';
 
 export interface Subscription {
   id: number;
@@ -16,6 +17,7 @@ export interface Subscription {
   directOnly: boolean;
   roundTripOnly: boolean;
   baggageRequired: boolean;
+  tripClass: TripClass;
   isActive: boolean;
 }
 
@@ -69,5 +71,7 @@ export function matchesSubscription(ticket: Ticket, subscription: Subscription):
     )
     && (subscription.maxPrice === null || ticket.price <= subscription.maxPrice)
     && (!subscription.directOnly || ticket.isDirect)
-    && (!subscription.roundTripOnly || ticket.returnDate !== null);
+    && (!subscription.roundTripOnly || ticket.returnDate !== null)
+    && (!subscription.baggageRequired || ticket.hasBaggage)
+    && ticket.tripClass === subscription.tripClass;
 }

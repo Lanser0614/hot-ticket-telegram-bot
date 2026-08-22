@@ -1,56 +1,69 @@
-# Design QA — Hot Ticket Mini App
+# Hot Ticket UI visual QA
 
 ## Evidence
 
-- Source visual truth: `/Users/bellissimopizza/Desktop/Waiting on scope answers.zip` → `.thumbnail` and `Hot Ticket.dc.html` (working extraction: `/private/tmp/hot-ticket-design.8EZ6BJ/`).
-- Normalized source capture: `docs/design-qa/design-qa-reference.png`.
-- Browser-rendered implementation: `docs/design-qa/design-qa-home.png`.
-- Combined full-view comparison: `docs/design-qa/design-qa-comparison.png`.
-- Additional implementation state: `docs/design-qa/design-qa-detail.png`.
-- State: default Hot Deals screen, dark theme, realistic local demo data matching the design content.
-- CSS viewport: `402 × 874` at device scale factor `1`.
-- Source pixels: original thumbnail `640 × 409`; phone region normalized from `169 × 368` to `402 × 874`.
-- Implementation pixels: `402 × 874`.
-- Density normalization: both comparison panels are `402 × 874`; the source phone crop was resized only to normalize the low-resolution thumbnail supplied by the design archive.
+- Source visual truth: `/Users/bellissimopizza/Desktop/Hot Ticket Mini App (standalone).html`
+- Source capture: `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/reference-board.png`
+- Implementation URL: `http://127.0.0.1:4317/`
+- Implementation captures:
+  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-home.jpg`
+  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-tracking.jpg`
+  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-watchlist.jpg`
+  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-profile.jpg`
+- Combined comparison input: `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/comparison.png`
+- Target CSS viewport: 390 × 844 px, dark mode.
+- Browser capture: in-app browser reported 543 × 837 px at DPR 2. The application shell was fixed to the source width of 390 CSS px; implementation screenshots were center-cropped to 390 × 837 px for comparison. The source capture is 390 × 844 px.
+- States: Home, tracking sheet, Watchlist, Profile. Ticket detail was also rendered and interaction-tested.
 
-## Findings
+## Full-view comparison
 
-- No actionable P0, P1, or P2 visual differences remain.
-- Typography: the system sans-serif family, bold price hierarchy, uppercase orange eyebrow, muted supporting text, and compact control labels follow the source. The supplied thumbnail is low resolution, but visible sizes, weights, wrapping, and hierarchy align.
-- Spacing and layout: the 18 px side margins, horizontal chip strip, compact deal-card rhythm, 16 px card radii, card padding, and fixed bottom navigation align with the source composition.
-- Colors and tokens: deep navy background, raised blue-gray cards, muted gray text, Telegram-blue controls, orange hot-deal treatment, and green active states match the source palette.
-- Image and icon fidelity: the product has no photography or illustration. UI icons use the official Tabler outline assets; there are no emoji, handcrafted inline SVGs, or CSS-drawn replacement icons.
-- Copy and content: the primary route, price, dates, deal-confidence message, baggage/direct labels, filters, and navigation labels match the supplied mock while using real API fields.
-- Platform normalization: the source thumbnail includes an iOS status bar, Dynamic Island, device bezel, and home indicator. The implementation intentionally omits those elements because Telegram supplies the host chrome; duplicating them inside a real Mini App would be incorrect.
+The combined comparison was inspected after normalization. The implementation preserves the source hierarchy: compact toolbar, price-led HotTicket hero, route price scale, three-day movers, notification CTA, persistent navigation, tracking sheet, live Watchlist cards, and compact profile settings.
 
-## Full-view comparison evidence
+## Focused region comparison
 
-`docs/design-qa/design-qa-comparison.png` places the normalized source on the left and the browser implementation on the right. Above-the-fold hierarchy, card widths, background/surface balance, horizontal filter overflow, card density, and persistent bottom navigation are visibly consistent. The implementation is sharper because it is a native browser capture rather than the archive's compressed thumbnail.
+Focused checks were made for the Home hero/price scale, tracking presets/slider/toggles, Watchlist goal progress/actions, and Profile notification controls. These regions contain the most fidelity-sensitive typography, spacing, controls, and copy.
 
-## Focused-region evidence
+## Required fidelity surfaces
 
-A separate crop was not needed: at `402 × 874`, the combined comparison keeps the header, chips, two complete cards, route/price typography, badges, metadata icons, captions, and bottom navigation readable. The ticket-detail/chart state was captured separately in `docs/design-qa/design-qa-detail.png` to verify the secondary screen's spacing, chart clarity, information rows, and range selector.
-
-## Interaction and runtime checks
-
-- Filters: destination and price draft can be cancelled without changing results; Apply updates the result list and active-filter count.
-- Ticket detail: route data, fare facts, deal score, and price chart render; 7/30/90-day range controls update the history.
-- Watchlist: a route can be created from a ticket and appears as active with its saved conditions.
-- Profile: travel class and baggage preference can be changed and saved.
-- Loading, empty, error, toast, and locked Telegram-auth states are implemented.
-- Browser console: no application errors. The standalone Telegram SDK haptic warning found during the first check was removed by skipping haptics in local demo mode.
+- Fonts and typography: system/SF Pro stack, weights, hierarchy, compact labels, numeric emphasis, and wrapping match the reference closely.
+- Spacing and layout rhythm: 390 px shell, 18 px page gutters, compact card spacing, radii, fixed bottom navigation, and sheet proportions align with the source.
+- Colors and tokens: source dark background/surface/accent/orange/green palette is mapped to shared CSS variables.
+- Image and asset fidelity: the reference has no raster imagery. All visible icons use the existing Tabler icon assets; no emoji or handcrafted SVG replacements were introduced.
+- Copy and content: route analytics and concrete HotTicket facts remain separate; tracking, Watchlist, and profile copy follows the standalone reference and the agreed product behavior.
 
 ## Comparison history
 
-### Pass 1
+### Iteration 1 — blocked
 
-- Earlier P0/P1/P2 findings: none.
-- Non-visual runtime finding: Telegram's SDK warned that haptic feedback was unavailable in the standalone local preview.
-- Fix made: haptic calls are disabled only in local demo mode; Telegram production behavior is unchanged.
-- Post-fix evidence: refreshed `docs/design-qa/design-qa-home.png`; core flows retested; no application errors.
+- P1: the implementation shell used a 520 px maximum instead of the 390 px source frame.
+- P1: the Home hero used oversized airport codes and an added page title, changing the above-the-fold hierarchy.
+- P2: the tracking sheet exposed native date fields for every preset and used a number input instead of the source's preset-first flow and price slider.
+
+Fixes applied:
+
+- Reduced the app shell, navigation, purchase bar, and bottom sheet to a 390 px maximum.
+- Rebuilt the Home toolbar and compact price-led hero to match the source.
+- Kept dates behind “Свои даты” and added the prefilled price slider plus advanced-condition disclosure.
+
+### Iteration 2 — passed
+
+Post-fix browser captures show no remaining actionable P0/P1/P2 mismatch. Residual differences are content-level and intentional: real API data may produce different prices/routes, and the Watchlist uses exact subscription conditions rather than static mock values.
+
+## Primary interactions tested
+
+- Open ticket detail and change history period.
+- Open/close the tracking sheet from the Home bell.
+- Open existing Watchlist tracking for editing.
+- Navigate among Deals, Watchlist, and Profile.
+- Render profile auto-save controls and quiet-hours editor.
+- Inspect browser console: no application errors. Telegram SDK capability warnings appear only in standalone browser demo mode.
+
+## Findings
+
+No actionable P0/P1/P2 findings remain.
 
 ## Follow-up polish
 
-- P3: if the designer supplies lossless exports of individual screens, typography and icon stroke weight can be compared at higher fidelity than the compressed archive thumbnail allows.
+- P3: add a dedicated real-device Telegram screenshot pass after deployment because browser demo mode cannot reproduce Telegram safe-area chrome exactly.
 
 final result: passed

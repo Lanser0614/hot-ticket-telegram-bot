@@ -37,6 +37,8 @@ export interface AdminUserStats {
   readonly new7Days: number;
   readonly new30Days: number;
   readonly withActiveSubscriptions: number;
+  readonly referralsTotal: number;
+  readonly referrals30Days: number;
   readonly recent: readonly AdminUserRecord[];
 }
 
@@ -49,6 +51,7 @@ export interface AdminUserRecord {
   readonly isActive: boolean;
   readonly activeSubscriptions: number;
   readonly clicks30Days: number;
+  readonly referralCount: number;
   readonly createdAt: Date;
 }
 

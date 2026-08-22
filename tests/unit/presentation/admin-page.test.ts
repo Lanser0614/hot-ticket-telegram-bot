@@ -42,6 +42,8 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
         new7Days: 1,
         new30Days: 3,
         withActiveSubscriptions: 2,
+        referralsTotal: 1,
+        referrals30Days: 1,
         recent: [{
           id: 1,
           telegramUserId: 123456,
@@ -51,6 +53,7 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
           isActive: true,
           activeSubscriptions: 1,
           clicks30Days: 5,
+          referralCount: 1,
           createdAt: new Date('2026-08-20T12:00:00Z')
         }]
       },

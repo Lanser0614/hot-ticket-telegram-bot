@@ -1,11 +1,13 @@
 import type { Logger, SyncSourceRepository } from './ports.js';
 import type { SyncTicketsService } from './sync-tickets.js';
+import type { NotificationDeliveryService } from './notification-delivery.js';
 
 export class SyncHotTicketsJob {
   public constructor(
     private readonly syncSourceRepository: SyncSourceRepository,
     private readonly syncTicketsService: SyncTicketsService,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly notificationDelivery?: NotificationDeliveryService
   ) {}
 
   public async execute(): Promise<{ processedSources: number }> {
@@ -25,6 +27,7 @@ export class SyncHotTicketsJob {
       }
     }
 
+    await this.notificationDelivery?.execute();
     return { processedSources };
   }
 }

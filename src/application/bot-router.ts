@@ -6,6 +6,7 @@ import type { SessionService } from './sessions.js';
 import type { SubscriptionService } from './subscriptions.js';
 import type { TicketListingOptions, TicketService } from './tickets.js';
 import type { UserService } from './users.js';
+import { parseReferralStartPayload, type ReferralService } from './referrals.js';
 import { assertIsoDate } from '../domain/dates.js';
 import { ValidationError } from '../domain/errors.js';
 import {
@@ -69,6 +70,7 @@ interface RouterDependencies {
   sessions: SessionService;
   gateway: TelegramGateway;
   links?: TrackedLinkFactory;
+  referrals?: ReferralService;
 }
 
 function requirePayloadString(
@@ -293,13 +295,14 @@ export class TelegramBotRouter {
         return;
       }
       try {
-        await this.dependencies.users.completeOnboarding(query.from.id, language, originCode);
+        const user = await this.dependencies.users.completeOnboarding(query.from.id, language, originCode);
         await this.dependencies.gateway.sendMessage({
           chatId: query.chatId,
           text: localized(language, 'Настройка завершена. Главное меню', 'Sozlash tugadi. Asosiy menyu'),
           replyMarkup: mainKeyboard(language)
         });
         await this.dependencies.gateway.answerCallbackQuery({ callbackQueryId: query.id });
+        await this.showPendingSharedTicket(user.id, query.chatId, language);
       } catch (error: unknown) {
         await this.answerCallback(
           query.id,
@@ -359,6 +362,7 @@ export class TelegramBotRouter {
     if (from === undefined) return;
     const command = text.split(/\s+/u, 1)[0] ?? text;
     if (command === '/start') {
+      const existing = await this.dependencies.users.findByTelegramUserId(from.id);
       const user = await this.dependencies.users.start({
         telegramUserId: from.id,
         telegramChatId: message.chat.id,
@@ -367,6 +371,16 @@ export class TelegramBotRouter {
         lastName: from.last_name ?? null,
         languageCode: from.language_code ?? null
       });
+      const payloadText = text.split(/\s+/u)[1] ?? null;
+      const referralPayload = parseReferralStartPayload(payloadText);
+      if (referralPayload !== null && this.dependencies.referrals !== undefined) {
+        if (existing === null) {
+          await this.dependencies.referrals.attributeNewUser(user.id, referralPayload);
+        }
+        if (referralPayload.ticketId !== null && !user.onboardingCompleted) {
+          await this.dependencies.referrals.savePendingTicket(user.id, referralPayload.ticketId);
+        }
+      }
       if (!user.onboardingCompleted) {
         await this.dependencies.gateway.sendMessage({
           chatId: message.chat.id,
@@ -380,6 +394,14 @@ export class TelegramBotRouter {
           text: languageMessage(language, 'mainMenu'),
           replyMarkup: mainKeyboard(language)
         });
+        if (referralPayload?.ticketId !== null && referralPayload !== null) {
+          await this.showSharedTicket(
+            message.chat.id,
+            user.id,
+            referralPayload.ticketId,
+            language
+          );
+        }
       }
       return;
     }
@@ -444,6 +466,39 @@ export class TelegramBotRouter {
     } else {
       await this.send(message.chat.id, localized(language, 'Неизвестная команда. Используйте /help.', 'Noma’lum buyruq. /help dan foydalaning.'));
     }
+  }
+
+  private async showPendingSharedTicket(
+    userId: number,
+    chatId: number,
+    language: AppLanguage
+  ): Promise<void> {
+    const ticketId = await this.dependencies.referrals?.takePendingTicket(userId) ?? null;
+    if (ticketId !== null) await this.showSharedTicket(chatId, userId, ticketId, language);
+  }
+
+  private async showSharedTicket(
+    chatId: number,
+    userId: number,
+    ticketId: number,
+    language: AppLanguage
+  ): Promise<void> {
+    const ticket = await this.dependencies.tickets.findActiveById(ticketId);
+    if (ticket === null) {
+      await this.send(chatId, localized(language, 'Этот билет уже недоступен.', 'Bu chipta endi mavjud emas.'));
+      return;
+    }
+    await this.dependencies.gateway.sendMessage({
+      chatId,
+      text: presentTicket(ticket, language),
+      parseMode: 'HTML',
+      replyMarkup: ticketKeyboard(this.dependencies.links?.create({
+        ticket,
+        source: 'bot_share',
+        userId,
+        subscriptionId: null
+      }) ?? ticket.ticketLink, language)
+    });
   }
 
   private async sendTicketPage(

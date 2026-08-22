@@ -16,6 +16,11 @@ export interface User {
   preferredCurrencyCode: string;
   preferredTripClass: TripClass;
   baggageRequired: boolean;
+  instantNotificationsEnabled: boolean;
+  morningDigestEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietStartMinute: number;
+  quietEndMinute: number;
   onboardingCompleted: boolean;
   isActive: boolean;
   createdAt: Date;
@@ -80,6 +85,28 @@ export interface NotificationInput {
   subscription: Subscription;
   ticket: StoredTicket;
   type: TicketEventType;
+}
+
+export type NotificationQueueStatus = 'pending' | 'sent' | 'discarded' | 'failed';
+
+export interface NotificationQueueItem {
+  readonly id: number;
+  readonly userId: number;
+  readonly subscriptionId: number;
+  readonly ticketId: number;
+  readonly ticketPrice: number;
+  readonly notificationType: TicketEventType;
+  readonly deliveryMode: 'instant_or_digest' | 'digest_only';
+  readonly status: NotificationQueueStatus;
+  readonly attemptCount: number;
+  readonly nextAttemptAt: Date;
+  readonly queuedAt: Date;
+}
+
+export interface TrackedSavings {
+  readonly amount: number;
+  readonly currency: 'UZS';
+  readonly periodDays: 90;
 }
 
 export interface TelegramMessageInput {

@@ -38,6 +38,8 @@ const repository: AdminRepository = {
       new7Days: 1,
       new30Days: 1,
       withActiveSubscriptions: 0,
+      referralsTotal: 0,
+      referrals30Days: 0,
       recent: []
     },
     priceStats: {

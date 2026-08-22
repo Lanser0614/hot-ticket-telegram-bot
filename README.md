@@ -239,6 +239,7 @@ Production-значения:
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=<BOTFATHER_TOKEN>
+TELEGRAM_BOT_USERNAME=<BOT_USERNAME_WITHOUT_AT>
 DATABASE_PATH=/opt/hot-ticket-bot/data/hot-ticket-bot.sqlite
 BACKUP_DIRECTORY=/opt/hot-ticket-bot/backups
 AVIASALES_EXPLORE_BASE_URL=https://explore-api.aviasales.com
@@ -444,6 +445,7 @@ Mini App доступен по адресу `${PUBLIC_BASE_URL}/app/`, напр�
 
 ```dotenv
 PUBLIC_BASE_URL=https://tickets.example.com
+TELEGRAM_BOT_USERNAME=<BOT_USERNAME_WITHOUT_AT>
 WEB_HOST=127.0.0.1
 WEB_PORT=8081
 CLICK_SIGNING_SECRET=<RANDOM_SECRET_AT_LEAST_32_CHARACTERS>
@@ -451,6 +453,15 @@ AFFILIATE_MARKER=
 AFFILIATE_LINK_TEMPLATE=https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}
 MINIAPP_AUTH_MAX_AGE_SECONDS=900
 ```
+
+`TELEGRAM_BOT_USERNAME` включает персональные deep links для shared-билетов и
+реферальную атрибуцию. Если переменная не задана, каталог и покупка продолжают
+работать, но Mini App использует обычный share без реферального payload.
+
+Уведомления сначала попадают в устойчивую SQLite-очередь. Мгновенная доставка
+ограничена тремя сообщениями в локальные сутки, quiet hours сохраняют лучший
+билет по подписке, а включённый утренний дайджест отправляется после 09:00 по
+`Asia/Tashkent` во время очередного cron sync.
 
 Секрет можно сгенерировать непосредственно на VDS, не печатая его в чат:
 

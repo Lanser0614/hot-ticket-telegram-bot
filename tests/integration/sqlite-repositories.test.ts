@@ -111,7 +111,8 @@ describe('ApplicationRepositories on SQLite', () => {
       maxPrice: 2_000_000,
       directOnly: true,
       roundTripOnly: false,
-      baggageRequired: false
+      baggageRequired: false,
+      tripClass: 'economy'
     }, now);
     expect(await repositories.findMatching(stored)).toHaveLength(1);
 
@@ -319,7 +320,8 @@ describe('ApplicationRepositories on SQLite', () => {
       maxPrice: 2_000_000,
       directOnly: true,
       roundTripOnly: false,
-      baggageRequired: false
+      baggageRequired: false,
+      tripClass: 'economy'
     }, now);
     await repositories.addClick({
       ticket: stored,

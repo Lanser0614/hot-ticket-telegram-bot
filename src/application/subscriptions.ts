@@ -15,7 +15,15 @@ export type CreateSubscriptionInput = Pick<
   | 'maxPrice'
   | 'directOnly'
   | 'roundTripOnly'
-> & { readonly baggageRequired?: boolean };
+> & {
+  readonly baggageRequired?: boolean | undefined;
+  readonly tripClass?: SubscriptionDraft['tripClass'] | undefined;
+};
+
+export type UpdateSubscriptionInput = Omit<
+  CreateSubscriptionInput,
+  never
+>;
 
 export class SubscriptionService {
   public constructor(
@@ -38,8 +46,36 @@ export class SubscriptionService {
       userId,
       originCode: user.defaultOriginCode,
       currencyCode: user.preferredCurrencyCode,
-      baggageRequired: input.baggageRequired ?? false
+      baggageRequired: input.baggageRequired ?? user.baggageRequired,
+      tripClass: input.tripClass ?? user.preferredTripClass
     }), this.clock.now());
+  }
+
+  public async updateForUser(
+    userId: number,
+    subscriptionId: number,
+    input: UpdateSubscriptionInput
+  ): Promise<Subscription | null> {
+    const user = await this.users.findById(userId);
+    if (user === null) throw new ValidationError('Пользователь не найден');
+    const validated = validateSubscriptionDraft({
+      ...input,
+      userId,
+      originCode: user.defaultOriginCode,
+      currencyCode: user.preferredCurrencyCode,
+      baggageRequired: input.baggageRequired ?? user.baggageRequired,
+      tripClass: input.tripClass ?? user.preferredTripClass
+    });
+    return this.subscriptions.updateOwned(userId, subscriptionId, {
+      destinationCode: validated.destinationCode,
+      departureDateFrom: validated.departureDateFrom,
+      departureDateTo: validated.departureDateTo,
+      maxPrice: validated.maxPrice,
+      directOnly: validated.directOnly,
+      roundTripOnly: validated.roundTripOnly,
+      baggageRequired: validated.baggageRequired,
+      tripClass: validated.tripClass
+    }, this.clock.now());
   }
 
   public listForUser(userId: number): Promise<readonly Subscription[]> {

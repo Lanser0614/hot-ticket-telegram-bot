@@ -1,20 +1,32 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 
 import type { MiniAppDealQuery, MiniAppDealSort, MiniAppService } from '../../application/miniapp.js';
-import type { Clock, ClickRepository, Logger, TicketRepository } from '../../application/ports.js';
+import type {
+  Clock,
+  ClickRepository,
+  Logger,
+  RoutePriceRepository,
+  SubscriptionRepository,
+  TicketRepository
+} from '../../application/ports.js';
 import { buildAffiliateLink, type AffiliateConfig } from '../../domain/affiliate-link.js';
 import { classifyUserAgent, parseClickSource } from '../../domain/click-tracking.js';
 import { verifyClickSignature, type ClickPayload } from '../../domain/click-signature.js';
 import { normalizeIataCode } from '../../domain/codes.js';
+import { dateInTimeZone } from '../../domain/dates.js';
 import { RateLimitError, ValidationError } from '../../domain/errors.js';
 import { validateMiniAppInitData } from '../../domain/miniapp-auth.js';
 import { FixedWindowRateLimiter } from '../../domain/rate-limit.js';
 import type { TripClass } from '../../domain/travel-preferences.js';
+import { createRouteKey } from '../../domain/route-price.js';
+import { calculateTrackedSavingsSnapshot } from '../../domain/tracked-savings.js';
 
 export interface WebServerDependencies {
   readonly miniApp: MiniAppService;
   readonly tickets: TicketRepository;
   readonly clicks: ClickRepository;
+  readonly routePrices: RoutePriceRepository;
+  readonly subscriptions: SubscriptionRepository;
   readonly clock: Clock;
   readonly logger: Logger;
   readonly telegramBotToken: string;
@@ -96,6 +108,18 @@ function bodyBoolean(value: unknown): boolean {
   return value === true;
 }
 
+function optionalBodyBoolean(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new ValidationError('Ожидалось логическое значение');
+  return value;
+}
+
+function optionalBodyInteger(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value)) throw new ValidationError('Ожидалось целое число');
+  return value as number;
+}
+
 function bodyOptionalMoney(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
@@ -107,6 +131,44 @@ function bodyOptionalMoney(value: unknown): number | null {
 function tripClass(value: unknown): TripClass {
   if (value === 'economy' || value === 'business') return value;
   throw new ValidationError('Некорректный класс перелёта');
+}
+
+function optionalTripClass(value: unknown): TripClass | undefined {
+  return value === undefined ? undefined : tripClass(value);
+}
+
+function subscriptionBody(body: Readonly<Record<string, unknown>>) {
+  return {
+    destinationCode: nullableBodyString(body.destinationCode),
+    departureDateFrom: requiredBodyString(body.departureDateFrom, 'departureDateFrom'),
+    departureDateTo: requiredBodyString(body.departureDateTo, 'departureDateTo'),
+    maxPrice: bodyOptionalMoney(body.maxPrice),
+    directOnly: bodyBoolean(body.directOnly),
+    roundTripOnly: bodyBoolean(body.roundTripOnly),
+    baggageRequired: optionalBodyBoolean(body.baggageRequired),
+    tripClass: optionalTripClass(body.tripClass)
+  };
+}
+
+function profileJson(user: Awaited<ReturnType<MiniAppService['getProfile']>>) {
+  return {
+    telegramUserId: user.telegramUserId,
+    firstName: user.firstName,
+    username: user.username,
+    languageCode: user.languageCode,
+    defaultOriginCode: user.defaultOriginCode,
+    onboardingCompleted: user.onboardingCompleted,
+    preferredTripClass: user.preferredTripClass,
+    baggageRequired: user.baggageRequired,
+    instantNotificationsEnabled: user.instantNotificationsEnabled,
+    morningDigestEnabled: user.morningDigestEnabled,
+    quietHoursEnabled: user.quietHoursEnabled,
+    quietStartMinute: user.quietStartMinute,
+    quietEndMinute: user.quietEndMinute,
+    trackedSavings: user.trackedSavings,
+    referralCount: user.referralCount,
+    referralShareUrl: user.referralShareUrl
+  };
 }
 
 function optionalPayloadId(value: unknown): number | null {
@@ -158,16 +220,51 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
         ? await dependencies.clicks.hasRecentClick(
           userId,
           ticket.id,
-          new Date(dependencies.clock.now().getTime() - 60_000)
+          new Date(dependencies.clock.now().getTime() - 60_000),
+          { source, subscriptionId }
         )
         : false;
       if (!duplicate) {
+        let benchmarkPrice: number | null = null;
+        let estimatedSavings: number | null = null;
+        const trackedSource = source === 'bot_notification' || source === 'miniapp_watchlist';
+        if (trackedSource && userId !== null && subscriptionId !== null && ticket.currencyCode === 'UZS') {
+          const subscription = await dependencies.subscriptions.findSubscriptionById(subscriptionId);
+          const contextual = subscription !== null
+            && subscription.userId === userId
+            && subscription.isActive
+            && ticket.originCode === subscription.originCode
+            && ticket.currencyCode === subscription.currencyCode
+            && (subscription.destinationCode === null || ticket.destinationCode === subscription.destinationCode)
+            && ticket.departureDate >= subscription.departureDateFrom
+            && ticket.departureDate <= subscription.departureDateTo
+            && (!subscription.directOnly || ticket.isDirect)
+            && (!subscription.roundTripOnly || ticket.returnDate !== null)
+            && (!subscription.baggageRequired || ticket.hasBaggage)
+            && ticket.tripClass === subscription.tripClass;
+          if (contextual) {
+            const history = (await dependencies.routePrices.getDailySeries(
+              createRouteKey(ticket.originCode, ticket.destinationCode, ticket.tripClass),
+              31,
+              dependencies.clock.now()
+            )).filter((point) => (
+              point.day < dateInTimeZone(dependencies.clock.now(), 'Asia/Tashkent')
+            )).slice(-30);
+            ({ benchmarkPrice, estimatedSavings } = calculateTrackedSavingsSnapshot(
+              ticket.price,
+              ticket.currencyCode,
+              history
+            ));
+          }
+        }
         clickId = await dependencies.clicks.addClick({
           ticket,
           userId,
           source,
           subscriptionId,
           userAgentKind,
+          benchmarkPrice,
+          estimatedSavings,
           clickedAt: dependencies.clock.now()
         });
       }
@@ -247,7 +344,8 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
     const telegramUserId = authenticatedUser(response);
     response.json(await dependencies.miniApp.getTicket(
       telegramUserId,
-      positiveId(firstValue(request.params.ticketId) ?? '')
+      positiveId(firstValue(request.params.ticketId) ?? ''),
+      optionalPayloadId(request.query.subscription_id)
     ));
   }));
 
@@ -276,16 +374,25 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
   app.post('/api/v1/subscriptions', asyncHandler(async (request, response) => {
     const telegramUserId = authenticatedUser(response);
     const body = request.body as Readonly<Record<string, unknown>>;
-    const subscription = await dependencies.miniApp.createSubscription(telegramUserId, {
-      destinationCode: nullableBodyString(body.destinationCode),
-      departureDateFrom: requiredBodyString(body.departureDateFrom, 'departureDateFrom'),
-      departureDateTo: requiredBodyString(body.departureDateTo, 'departureDateTo'),
-      maxPrice: bodyOptionalMoney(body.maxPrice),
-      directOnly: bodyBoolean(body.directOnly),
-      roundTripOnly: bodyBoolean(body.roundTripOnly),
-      baggageRequired: bodyBoolean(body.baggageRequired)
-    });
+    const subscription = await dependencies.miniApp.createSubscription(
+      telegramUserId,
+      subscriptionBody(body)
+    );
     response.status(201).json(subscription);
+  }));
+
+  app.patch('/api/v1/subscriptions/:subscriptionId', asyncHandler(async (request, response) => {
+    const body = request.body as Readonly<Record<string, unknown>>;
+    const subscription = await dependencies.miniApp.updateSubscription(
+      authenticatedUser(response),
+      positiveId(firstValue(request.params.subscriptionId) ?? ''),
+      subscriptionBody(body)
+    );
+    if (subscription === null) {
+      response.status(404).json({ error: { code: 'not_found', message: 'Подписка не найдена' } });
+      return;
+    }
+    response.json(subscription);
   }));
 
   app.delete('/api/v1/subscriptions/:subscriptionId', asyncHandler(async (request, response) => {
@@ -303,16 +410,7 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
 
   app.get('/api/v1/me', asyncHandler(async (request, response) => {
     const user = await dependencies.miniApp.getProfile(authenticatedUser(response));
-    response.json({
-      telegramUserId: user.telegramUserId,
-      firstName: user.firstName,
-      username: user.username,
-      languageCode: user.languageCode,
-      defaultOriginCode: user.defaultOriginCode,
-      onboardingCompleted: user.onboardingCompleted,
-      preferredTripClass: user.preferredTripClass,
-      baggageRequired: user.baggageRequired
-    });
+    response.json(profileJson(user));
   }));
 
   app.post('/api/v1/onboarding', asyncHandler(async (request, response) => {
@@ -322,47 +420,37 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
     if (languageCode !== 'ru' && languageCode !== 'uz') {
       throw new ValidationError('Поддерживаются только русский и узбекский языки');
     }
-    const user = await dependencies.miniApp.completeOnboarding(
+    await dependencies.miniApp.completeOnboarding(
       telegramUserId,
       languageCode,
       requiredBodyString(body.defaultOriginCode, 'defaultOriginCode')
     );
-    response.json({
-      telegramUserId: user.telegramUserId,
-      firstName: user.firstName,
-      username: user.username,
-      languageCode: user.languageCode,
-      defaultOriginCode: user.defaultOriginCode,
-      onboardingCompleted: user.onboardingCompleted,
-      preferredTripClass: user.preferredTripClass,
-      baggageRequired: user.baggageRequired
-    });
+    response.json(profileJson(await dependencies.miniApp.getProfile(telegramUserId)));
   }));
 
   app.patch('/api/v1/me', asyncHandler(async (request, response) => {
     const telegramUserId = authenticatedUser(response);
     const body = request.body as Readonly<Record<string, unknown>>;
-    const languageCode = requiredBodyString(body.languageCode, 'languageCode');
-    if (languageCode !== 'ru' && languageCode !== 'uz') {
+    const languageCode = body.languageCode === undefined
+      ? undefined
+      : requiredBodyString(body.languageCode, 'languageCode');
+    if (languageCode !== undefined && languageCode !== 'ru' && languageCode !== 'uz') {
       throw new ValidationError('Поддерживаются только русский и узбекский языки');
     }
-    const user = await dependencies.miniApp.updateProfile(
-      telegramUserId,
-      tripClass(body.preferredTripClass),
-      bodyBoolean(body.baggageRequired),
-      requiredBodyString(body.defaultOriginCode, 'defaultOriginCode'),
-      languageCode
-    );
-    response.json({
-      telegramUserId: user.telegramUserId,
-      firstName: user.firstName,
-      username: user.username,
-      languageCode: user.languageCode,
-      defaultOriginCode: user.defaultOriginCode,
-      onboardingCompleted: user.onboardingCompleted,
-      preferredTripClass: user.preferredTripClass,
-      baggageRequired: user.baggageRequired
+    await dependencies.miniApp.updateProfile(telegramUserId, {
+      preferredTripClass: optionalTripClass(body.preferredTripClass),
+      baggageRequired: optionalBodyBoolean(body.baggageRequired),
+      defaultOriginCode: body.defaultOriginCode === undefined
+        ? undefined
+        : requiredBodyString(body.defaultOriginCode, 'defaultOriginCode'),
+      languageCode,
+      instantNotificationsEnabled: optionalBodyBoolean(body.instantNotificationsEnabled),
+      morningDigestEnabled: optionalBodyBoolean(body.morningDigestEnabled),
+      quietHoursEnabled: optionalBodyBoolean(body.quietHoursEnabled),
+      quietStartMinute: optionalBodyInteger(body.quietStartMinute),
+      quietEndMinute: optionalBodyInteger(body.quietEndMinute)
     });
+    response.json(profileJson(await dependencies.miniApp.getProfile(telegramUserId)));
   }));
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {

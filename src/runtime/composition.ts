@@ -9,6 +9,8 @@ import { SyncTicketsService } from '../application/sync-tickets.js';
 import { TicketService } from '../application/tickets.js';
 import { UserService } from '../application/users.js';
 import { SignedTrackedLinkFactory } from '../application/tracked-links.js';
+import { ReferralService } from '../application/referrals.js';
+import { NotificationDeliveryService } from '../application/notification-delivery.js';
 import type { VdsConfig } from '../config.js';
 import {
   AviasalesClient,
@@ -54,13 +56,15 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     signingSecret: config.tracking.clickSigningSecret
   });
   const telegram = new TelegramBotApiClient(config.telegramBotToken, fetch, links);
+  const referrals = new ReferralService(repositories, config.telegramBotUsername, clock);
   const router = new TelegramBotRouter({
     users: new UserService(repositories, clock),
     tickets: new TicketService(repositories, repositories, clock),
     subscriptions: new SubscriptionService(repositories, repositories, clock),
     sessions: new SessionService(repositories, clock),
     gateway: telegram,
-    links
+    links,
+    referrals
   });
   const provider = new AviasalesHotTicketsProvider(
     new AviasalesClient(new NativeTextHttpClient(fetch), sleeper, config.aviasales),
@@ -73,6 +77,7 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     routePriceRepository: repositories,
     subscriptionRepository: repositories,
     notificationHistoryRepository: repositories,
+    notificationQueueRepository: repositories,
     userRepository: repositories,
     notifier: telegram,
     lockRepository: repositories,
@@ -80,7 +85,23 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     clock,
     logger
   });
-  const syncJob = new SyncHotTicketsJob(repositories, syncService, logger);
+  const notificationDelivery = new NotificationDeliveryService({
+    queue: repositories,
+    history: repositories,
+    users: repositories,
+    subscriptions: repositories,
+    tickets: repositories,
+    notifier: telegram,
+    telegram,
+    clock,
+    logger
+  });
+  const syncJob = new SyncHotTicketsJob(
+    repositories,
+    syncService,
+    logger,
+    notificationDelivery
+  );
   const polling = new LongPollingRunner({
     api: telegram,
     offsetStore: new TelegramOffsetStore(database, clock),
@@ -97,6 +118,8 @@ export function createVdsRuntime(config: VdsConfig, overrides: RuntimeOverrides 
     logger,
     links,
     telegram,
+    referrals,
+    notificationDelivery,
     router,
     polling,
     syncJob,

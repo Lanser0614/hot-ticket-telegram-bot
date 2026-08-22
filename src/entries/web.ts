@@ -26,12 +26,16 @@ export async function runWeb(
     runtime.repositories,
     subscriptions,
     runtime.links,
-    runtime.clock
+    runtime.clock,
+    runtime.repositories,
+    runtime.referrals
   );
   const app = createWebServer({
     miniApp,
     tickets: runtime.repositories,
     clicks: runtime.repositories,
+    routePrices: runtime.repositories,
+    subscriptions: runtime.repositories,
     clock: runtime.clock,
     logger: runtime.logger,
     telegramBotToken: vdsConfig.telegramBotToken,

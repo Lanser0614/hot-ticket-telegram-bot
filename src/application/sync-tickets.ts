@@ -5,6 +5,7 @@ import type {
   LockRepository,
   Logger,
   NotificationHistoryRepository,
+  NotificationQueueRepository,
   PriceHistoryRepository,
   RoutePriceRepository,
   SubscriptionRepository,
@@ -16,10 +17,7 @@ import type {
 import { validateHotOffersInput } from '../domain/codes.js';
 import { dateInTimeZone } from '../domain/dates.js';
 import { detectTicketEvent } from '../domain/ticket-events.js';
-import {
-  matchesUserTicketPreferences,
-  type TripClass
-} from '../domain/travel-preferences.js';
+import type { TripClass } from '../domain/travel-preferences.js';
 import { calculateDaysAhead, createRouteKey } from '../domain/route-price.js';
 
 interface SyncTicketsDependencies {
@@ -29,6 +27,7 @@ interface SyncTicketsDependencies {
   routePriceRepository: RoutePriceRepository;
   subscriptionRepository: SubscriptionRepository;
   notificationHistoryRepository: NotificationHistoryRepository;
+  notificationQueueRepository?: NotificationQueueRepository;
   userRepository: UserRepository;
   notifier: TicketNotifier;
   lockRepository: LockRepository;
@@ -40,6 +39,25 @@ interface SyncTicketsDependencies {
 const LOCK_TTL_SECONDS = 300;
 const DESTINATION_CACHE_TRIP_CLASSES: readonly TripClass[] = ['economy', 'business'];
 const DESTINATION_CACHE_BAGGAGE_OPTIONS = [false, true] as const;
+
+function minuteInTashkent(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Tashkent',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const value = (type: 'hour' | 'minute'): number => Number(
+    parts.find((part) => part.type === type)?.value ?? '0'
+  );
+  return value('hour') * 60 + value('minute');
+}
+
+function isQuietMinute(minute: number, start: number, end: number): boolean {
+  return start <= end
+    ? minute >= start && minute < end
+    : minute >= start || minute < end;
+}
 
 export class SyncTicketsService {
   public constructor(private readonly dependencies: SyncTicketsDependencies) {}
@@ -129,8 +147,32 @@ export class SyncTicketsService {
             });
             continue;
           }
-          if (!matchesUserTicketPreferences(stored, user)) continue;
-
+          if (this.dependencies.notificationQueueRepository !== undefined) {
+            await this.dependencies.notificationQueueRepository.enqueue({
+              userId: user.id,
+              subscriptionId: subscription.id,
+              ticketId: stored.id,
+              ticketPrice: stored.price,
+              notificationType: event,
+              queuedAt: observedAt
+            });
+            continue;
+          }
+          if (!user.instantNotificationsEnabled) continue;
+          if (
+            user.quietHoursEnabled
+            && isQuietMinute(
+              minuteInTashkent(observedAt),
+              user.quietStartMinute,
+              user.quietEndMinute
+            )
+          ) continue;
+          const tashkentDay = dateInTimeZone(observedAt, 'Asia/Tashkent');
+          const dayStart = new Date(`${tashkentDay}T00:00:00+05:00`);
+          if (
+            await this.dependencies.notificationHistoryRepository.countSentSince(user.id, dayStart)
+            >= 3
+          ) continue;
           const alreadySent = await this.dependencies.notificationHistoryRepository.exists(
             subscription.userId,
             subscription.id,

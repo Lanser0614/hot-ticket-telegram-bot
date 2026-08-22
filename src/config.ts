@@ -13,6 +13,7 @@ export interface ConfigInput {
 
 export interface VdsConfig {
   readonly telegramBotToken: string;
+  readonly telegramBotUsername: string | null;
   readonly databasePath: string;
   readonly pollTimeoutSeconds: number;
   readonly updateMaxAttempts: number;
@@ -137,6 +138,7 @@ export function loadVdsConfig(input: NodeJS.ProcessEnv): VdsConfig {
   }
   return {
     telegramBotToken: requiredSecret(input.TELEGRAM_BOT_TOKEN, 'TELEGRAM_BOT_TOKEN'),
+    telegramBotUsername: normalizeBotUsername(input.TELEGRAM_BOT_USERNAME),
     databasePath: input.DATABASE_PATH?.trim() || './data/hot-ticket-bot.sqlite',
     pollTimeoutSeconds: boundedInteger(
       input.TELEGRAM_POLL_TIMEOUT_SECONDS,
@@ -163,4 +165,13 @@ export function loadVdsConfig(input: NodeJS.ProcessEnv): VdsConfig {
         || 'https://www.aviasales.uz/search/{search_code}?marker={marker}&sub_id={sub_id}&sub_id1={sub_id1}'
     }
   };
+}
+
+function normalizeBotUsername(value: string | undefined): string | null {
+  const normalized = optionalString(value)?.replace(/^@/u, '') ?? null;
+  if (normalized === null) return null;
+  if (!/^[A-Za-z0-9_]{5,32}$/u.test(normalized)) {
+    throw new ValidationError('Некорректный TELEGRAM_BOT_USERNAME');
+  }
+  return normalized;
 }

@@ -1,944 +1,255 @@
+import {
+  escapeHtml, formatDate, formatPrice, minutesToTime, timeToMinutes, todayInTashkent
+} from './lib/format.js';
+import { demoDeals, demoHistory, demoProfile, demoSubscriptions } from './lib/demo-data.js';
+
 const telegram = globalThis.Telegram?.WebApp;
 const content = document.querySelector('#content');
 const bottomNav = document.querySelector('#bottom-nav');
-const filterSheet = document.querySelector('#filter-sheet');
-const sheetBackdrop = document.querySelector('#sheet-backdrop');
+const sheet = document.querySelector('#app-sheet');
+const backdrop = document.querySelector('#sheet-backdrop');
 const toast = document.querySelector('#toast');
 const watchDot = document.querySelector('#watch-dot');
 const demoMode = globalThis.location.protocol === 'file:'
   || ['127.0.0.1', 'localhost'].includes(globalThis.location.hostname);
-const requestedLanguage = new globalThis.URLSearchParams(globalThis.location.search).get('lang');
-const telegramLanguage = telegram?.initDataUnsafe?.user?.language_code;
-const language = (requestedLanguage ?? telegramLanguage ?? '').toLocaleLowerCase().startsWith('uz')
-  ? 'uz'
-  : 'ru';
-const locale = language === 'uz' ? 'uz-UZ' : 'ru-RU';
-const pick = (russian, uzbek) => language === 'uz' ? uzbek : russian;
-
-document.documentElement.lang = language;
 
 const state = {
-  view: 'deals',
-  screen: 'tabs',
-  destinations: [],
-  deals: [],
-  subscriptions: [],
-  profile: null,
-  selectedTicket: null,
-  history: [],
-  historyRange: 30,
-  filters: { destination: '', maxPrice: '', direct: false, baggage: false, sort: 'best' },
-  form: null,
-  formError: '',
-  toastTimer: null
+  view: 'home', screen: 'tabs', profile: null, deals: [], destinations: [], subscriptions: [],
+  selectedTicket: null, history: [], historyRange: 30, sheetForm: null, toastTimer: null
 };
+const icon = (name) => `<span class="icon icon-${name}" aria-hidden="true"></span>`;
+const originNames = { TAS: 'Ташкент', SKD: 'Самарканд', BHK: 'Бухара', FEG: 'Фергана', NMA: 'Наманган', UGC: 'Ургенч' };
+const className = (value) => value === 'business' ? 'Бизнес' : 'Эконом';
 
-const sortLabels = {
-  best: pick('Выгодные', 'Foydali'),
-  cheapest: pick('Дешёвые', 'Arzon'),
-  recent: pick('Недавние', 'Yangi'),
-  departing_soon: pick('Скоро вылет', 'Tez orada uchish')
-};
-
-const demoHistory = [
-  2_390_000, 2_210_000, 2_150_000, 2_080_000, 1_990_000, 2_040_000,
-  1_970_000, 1_910_000, 1_860_000, 1_920_000, 1_980_000, 1_890_000,
-  1_820_000, 1_790_000, 1_750_000, 1_700_000, 1_680_000, 1_650_000,
-  1_600_000, 1_580_000, 1_550_000, 1_520_000, 1_500_000, 1_480_000
-];
-
-const demoDeals = [
-  {
-    id: 1,
-    originCode: 'TAS', originName: pick('Ташкент', 'Toshkent'), destinationCode: 'IST', destinationName: pick('Стамбул', 'Istanbul'),
-    departureDate: '2026-09-12', returnDate: '2026-09-16', price: 1_480_000, currencyCode: 'UZS',
-    airlineName: 'Turkish Airlines', isDirect: true, tripClass: 'economy', hasBaggage: true,
-    lastSeenAt: new Date(Date.now() - 8 * 60_000).toISOString(),
-    dealScore: { level: 'lowest', sampleDays: 24, percentile: 100, daysBelow: 0, minPrice: 1_450_000, medianPrice: 1_920_000, maxPrice: 2_390_000, trend: 'falling' },
-    openUrl: 'https://www.aviasales.uz/search/TAS1209IST16091'
-  },
-  {
-    id: 2,
-    originCode: 'TAS', originName: pick('Ташкент', 'Toshkent'), destinationCode: 'DXB', destinationName: pick('Дубай', 'Dubay'),
-    departureDate: '2026-09-14', returnDate: null, price: 2_100_000, currencyCode: 'UZS',
-    airlineName: 'flydubai', isDirect: false, tripClass: 'economy', hasBaggage: false,
-    lastSeenAt: new Date(Date.now() - 22 * 60_000).toISOString(),
-    dealScore: { level: 'good', sampleDays: 15, percentile: 82, daysBelow: 2, minPrice: 2_100_000, medianPrice: 2_380_000, maxPrice: 2_600_000, trend: 'falling' },
-    openUrl: 'https://www.aviasales.uz/search/TAS1409DXB1'
-  },
-  {
-    id: 3,
-    originCode: 'TAS', originName: pick('Ташкент', 'Toshkent'), destinationCode: 'ALA', destinationName: pick('Алматы', 'Olmaota'),
-    departureDate: '2026-09-18', returnDate: null, price: 1_320_000, currencyCode: 'UZS',
-    airlineName: 'Air Astana', isDirect: true, tripClass: 'economy', hasBaggage: false,
-    lastSeenAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-    dealScore: { level: 'insufficient_data', sampleDays: 3, percentile: null, daysBelow: 0, minPrice: 1_300_000, medianPrice: 1_340_000, maxPrice: 1_390_000, trend: null },
-    openUrl: 'https://www.aviasales.uz/search/TAS1809ALA1'
-  }
-];
-
-const demoStore = {
-  subscriptions: [],
-  profile: {
-    telegramUserId: 100,
-    firstName: pick('Алишер', 'Alisher'),
-    username: 'alisher',
-    languageCode: language,
-    defaultOriginCode: 'TAS',
-    onboardingCompleted: true,
-    preferredTripClass: 'economy',
-    baggageRequired: false
-  }
-};
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+function applyTelegramChrome() {
+  telegram?.setHeaderColor?.('#101922');
+  telegram?.setBackgroundColor?.('#101922');
+  telegram?.setBottomBarColor?.('#151f2b');
+  telegram?.disableVerticalSwipes?.();
 }
-
-function icon(name, extraClass = '') {
-  return `<span class="icon icon-${name} ${extraClass}" aria-hidden="true"></span>`;
-}
-
-function formatPrice(value, currency = '') {
-  const number = new Intl.NumberFormat(locale).format(value);
-  return currency ? `${number} ${currency}` : number;
-}
-
-function formatDate(value) {
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' })
-    .format(new Date(`${value}T00:00:00+05:00`));
-}
-
-function displayLocationName(name, code) {
-  if (language !== 'uz') return name;
-  const known = {
-    TAS: 'Toshkent', IST: 'Istanbul', DXB: 'Dubay', ALA: 'Olmaota', SKD: 'Samarqand',
-    BHK: 'Buxoro', FEG: 'Farg‘ona', NMA: 'Namangan', NCU: 'Nukus', UGC: 'Urganch',
-    TMJ: 'Termiz', KSQ: 'Qarshi', AZN: 'Andijon', NVI: 'Navoiy'
-  };
-  if (known[code]) return known[code];
-  const letters = {
-    А: 'A', а: 'a', Б: 'B', б: 'b', В: 'V', в: 'v', Г: 'G', г: 'g', Д: 'D', д: 'd',
-    Е: 'E', е: 'e', Ё: 'Yo', ё: 'yo', Ж: 'J', ж: 'j', З: 'Z', з: 'z', И: 'I', и: 'i',
-    Й: 'Y', й: 'y', К: 'K', к: 'k', Л: 'L', л: 'l', М: 'M', м: 'm', Н: 'N', н: 'n',
-    О: 'O', о: 'o', П: 'P', п: 'p', Р: 'R', р: 'r', С: 'S', с: 's', Т: 'T', т: 't',
-    У: 'U', у: 'u', Ф: 'F', ф: 'f', Х: 'X', х: 'x', Ц: 'Ts', ц: 'ts', Ч: 'Ch', ч: 'ch',
-    Ш: 'Sh', ш: 'sh', Щ: 'Shch', щ: 'shch', Ъ: '', ъ: '', Ы: 'I', ы: 'i', Ь: '', ь: '',
-    Э: 'E', э: 'e', Ю: 'Yu', ю: 'yu', Я: 'Ya', я: 'ya'
-  };
-  return [...name].map((character) => letters[character] ?? character).join('');
-}
-
-const uzbekistanOrigins = [
-  'TAS', 'SKD', 'BHK', 'FEG', 'NMA', 'NCU', 'UGC', 'TMJ', 'KSQ', 'AZN', 'NVI'
-];
-
-function originName(code = state.profile?.defaultOriginCode ?? 'TAS', targetLanguage = language) {
-  const names = {
-    ru: {
-      TAS: 'Ташкент', SKD: 'Самарканд', BHK: 'Бухара', FEG: 'Фергана', NMA: 'Наманган',
-      NCU: 'Нукус', UGC: 'Ургенч', TMJ: 'Термез', KSQ: 'Карши', AZN: 'Андижан', NVI: 'Навои'
-    },
-    uz: {
-      TAS: 'Toshkent', SKD: 'Samarqand', BHK: 'Buxoro', FEG: 'Farg‘ona', NMA: 'Namangan',
-      NCU: 'Nukus', UGC: 'Urganch', TMJ: 'Termiz', KSQ: 'Qarshi', AZN: 'Andijon', NVI: 'Navoiy'
-    }
-  };
-  return names[targetLanguage]?.[code] ?? code;
-}
-
-function relativeTime(value) {
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000));
-  if (minutes < 1) return pick('только что', 'hozirgina');
-  if (minutes < 60) return pick(`${minutes} мин. назад`, `${minutes} daqiqa oldin`);
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return pick(`${hours} ч. назад`, `${hours} soat oldin`);
-  return pick(`${Math.round(hours / 24)} дн. назад`, `${Math.round(hours / 24)} kun oldin`);
-}
-
-function delay(milliseconds) {
-  return new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds));
-}
-
-async function demoApi(path, options = {}) {
-  await delay(120);
-  const url = new globalThis.URL(path, 'https://demo.local');
-  if (url.pathname === '/api/v1/deals') {
-    let items = [...demoDeals];
-    const destination = url.searchParams.get('destination');
-    const maxPrice = Number(url.searchParams.get('max_price'));
-    if (destination) items = items.filter((item) => item.destinationCode === destination);
-    if (maxPrice > 0) items = items.filter((item) => item.price <= maxPrice);
-    if (url.searchParams.get('direct') === '1') items = items.filter((item) => item.isDirect);
-    if (url.searchParams.get('baggage') === '1') items = items.filter((item) => item.hasBaggage);
-    const sort = url.searchParams.get('sort');
-    if (sort === 'cheapest') items.sort((left, right) => left.price - right.price);
-    if (sort === 'departing_soon') items.sort((left, right) => left.departureDate.localeCompare(right.departureDate));
-    if (sort === 'recent') items.reverse();
-    return { items, nextCursor: null };
-  }
-  if (url.pathname === '/api/v1/destinations') {
-    return { items: demoDeals.map((item) => ({ code: item.destinationCode, name: item.destinationName })) };
-  }
-  if (/^\/api\/v1\/tickets\/\d+$/u.test(url.pathname)) {
-    const id = Number(url.pathname.split('/').at(-1));
-    return demoDeals.find((item) => item.id === id);
-  }
-  if (url.pathname.includes('/history')) {
-    const days = Number(url.searchParams.get('days') ?? 30);
-    const prices = demoHistory.slice(-days);
-    return { items: prices.map((price, index) => ({
-      day: `2026-08-${String(index + 1).padStart(2, '0')}`,
-      minPrice: price,
-      averagePrice: price + 60_000,
-      medianPrice: price + 20_000,
-      maxPrice: price + 120_000,
-      sampleCount: 4
-    })) };
-  }
-  if (url.pathname === '/api/v1/subscriptions' && options.method === 'POST') {
-    const body = JSON.parse(options.body);
-    const created = {
-      id: demoStore.subscriptions.length + 1,
-      userId: 1,
-      originCode: 'TAS',
-      destinationCode: body.destinationCode,
-      currencyCode: 'UZS',
-      departureDateFrom: body.departureDateFrom,
-      departureDateTo: body.departureDateTo,
-      maxPrice: body.maxPrice,
-      directOnly: body.directOnly,
-      roundTripOnly: body.roundTripOnly,
-      baggageRequired: body.baggageRequired,
-      isActive: true
-    };
-    demoStore.subscriptions.unshift(created);
-    return created;
-  }
-  if (url.pathname === '/api/v1/subscriptions') return { items: demoStore.subscriptions };
-  if (/^\/api\/v1\/subscriptions\/\d+$/u.test(url.pathname) && options.method === 'DELETE') {
-    const id = Number(url.pathname.split('/').at(-1));
-    const subscription = demoStore.subscriptions.find((item) => item.id === id);
-    if (subscription) subscription.isActive = false;
-    return null;
-  }
-  if (url.pathname === '/api/v1/me' && options.method === 'PATCH') {
-    Object.assign(demoStore.profile, JSON.parse(options.body));
-    return { ...demoStore.profile };
-  }
-  if (url.pathname === '/api/v1/onboarding' && options.method === 'POST') {
-    Object.assign(demoStore.profile, JSON.parse(options.body), { onboardingCompleted: true });
-    return { ...demoStore.profile };
-  }
-  if (url.pathname === '/api/v1/me') return { ...demoStore.profile };
-  throw new Error(pick('Демо-данные для запроса не найдены', 'So‘rov uchun demo ma’lumotlari topilmadi'));
-}
-
-function localizeServerError(message) {
-  if (language !== 'uz') return message;
-  const errors = {
-    'Сначала выполните /start в боте': 'Avval botda /start buyrug‘ini yuboring',
-    'Билет не найден': 'Chipta topilmadi',
-    'Некорректная дата': 'Sana noto‘g‘ri',
-    'Некорректная цена': 'Narx noto‘g‘ri',
-    'Начальная дата позже конечной': 'Boshlanish sanasi tugash sanasidan keyin',
-    'Достигнут лимит 20 активных подписок': '20 ta faol kuzatuv chegarasiga yetildi'
-  };
-  return errors[message] ?? message;
-}
+function haptic(style = 'light') { telegram?.HapticFeedback?.impactOccurred?.(style); }
 
 async function api(path, options = {}) {
   if (demoMode) return demoApi(path, options);
   const response = await fetch(path, {
     ...options,
-    headers: {
-      authorization: `tma ${telegram?.initData ?? ''}`,
-      ...(options.body ? { 'content-type': 'application/json' } : {}),
-      ...(options.headers ?? {})
-    }
+    headers: { 'Content-Type': 'application/json', Authorization: `tma ${telegram?.initData ?? ''}`, ...(options.headers ?? {}) }
   });
-  if (response.status === 204) return null;
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(localizeServerError(
-    payload?.error?.message ?? pick('Не удалось загрузить данные', 'Ma’lumotlarni yuklab bo‘lmadi')
-  ));
-  return payload;
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? 'Не удалось выполнить запрос');
+  }
+  return response.status === 204 ? null : response.json();
 }
 
-function haptic(type = 'light') {
-  if (demoMode) return;
-  telegram?.HapticFeedback?.impactOccurred(type);
-}
-
-function applyTelegramChrome() {
-  if (!telegram) return;
-  if (telegram.isVersionAtLeast?.('6.1')) telegram.setBackgroundColor?.('#101922');
-  if (telegram.isVersionAtLeast?.('6.9')) telegram.setHeaderColor?.('#101922');
-  if (telegram.isVersionAtLeast?.('7.10')) telegram.setBottomBarColor?.('#151f2b');
+function demoApi(path, options) {
+  const method = options.method ?? 'GET';
+  if (path === '/api/v1/me' && method === 'GET') return globalThis.structuredClone(demoProfile);
+  if (path === '/api/v1/me' && method === 'PATCH') { Object.assign(demoProfile, JSON.parse(options.body)); return globalThis.structuredClone(demoProfile); }
+  if (path.startsWith('/api/v1/deals')) return { items: globalThis.structuredClone(demoDeals), nextCursor: null };
+  if (path === '/api/v1/destinations') return { items: demoDeals.map(({ destinationCode: code, destinationName: name }) => ({ code, name })) };
+  if (path === '/api/v1/subscriptions' && method === 'GET') return { items: globalThis.structuredClone(demoSubscriptions) };
+  if (path === '/api/v1/subscriptions' && method === 'POST') {
+    const item = { id: Date.now(), userId: 1, originCode: demoProfile.defaultOriginCode, currencyCode: 'UZS', isActive: true, ...JSON.parse(options.body) };
+    demoSubscriptions.unshift(item); return globalThis.structuredClone(item);
+  }
+  if (path.startsWith('/api/v1/subscriptions/') && method === 'PATCH') {
+    const item = demoSubscriptions.find((subscription) => subscription.id === Number(path.split('/').at(-1)));
+    Object.assign(item, JSON.parse(options.body)); return globalThis.structuredClone(item);
+  }
+  if (path.startsWith('/api/v1/subscriptions/') && method === 'DELETE') {
+    const item = demoSubscriptions.find((subscription) => subscription.id === Number(path.split('/').at(-1)));
+    if (item) item.isActive = false; return null;
+  }
+  if (path.startsWith('/api/v1/tickets/')) return globalThis.structuredClone(demoDeals.find((item) => item.id === Number(path.split('/').at(-1))));
+  if (path.includes('/history')) return { items: globalThis.structuredClone(demoHistory.slice(-state.historyRange)) };
+  throw new Error(`Demo API: ${method} ${path}`);
 }
 
 function showToast(message) {
-  toast.textContent = message;
-  toast.classList.remove('hidden');
-  if (state.toastTimer) globalThis.clearTimeout(state.toastTimer);
-  state.toastTimer = globalThis.setTimeout(() => toast.classList.add('hidden'), 2200);
+  globalThis.clearTimeout(state.toastTimer); toast.textContent = message; toast.classList.remove('hidden');
+  state.toastTimer = globalThis.setTimeout(() => toast.classList.add('hidden'), 2400);
 }
-
-function showTabs(show) {
-  bottomNav.classList.toggle('hidden', !show);
-  state.screen = show ? 'tabs' : state.screen;
+function loading() { content.innerHTML = '<div class="screen-loader"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>'; }
+function errorScreen(error, retry) {
+  content.innerHTML = `<section class="screen error-state"><span class="state-icon">${icon('wifi-off')}</span><div class="state-title">Не удалось загрузить</div><div class="state-copy">${escapeHtml(error instanceof Error ? error.message : 'Попробуйте ещё раз')}</div><button id="retry" class="primary state-action" type="button">Повторить</button></section>`;
+  document.querySelector('#retry')?.addEventListener('click', retry);
 }
-
+function showTabs(value) { bottomNav.classList.toggle('hidden', !value); telegram?.BackButton?.[value ? 'hide' : 'show']?.(); }
 function setActiveNav() {
-  document.querySelectorAll('[data-view]').forEach((button) => {
-    button.classList.toggle('active', button.dataset.view === state.view);
-  });
+  document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === state.view));
   watchDot.classList.toggle('hidden', !state.subscriptions.some((item) => item.isActive));
 }
-
-function loadingScreen() {
-  content.innerHTML = `<div class="screen-loader"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>`;
+function percentBelow(ticket) {
+  const median = ticket.dealScore?.medianPrice;
+  return median && median > ticket.price ? Math.round((1 - ticket.price / median) * 100) : null;
+}
+function ticketMatches(ticket, subscription, includePrice = true) {
+  return subscription.isActive && ticket.originCode === subscription.originCode
+    && (!subscription.destinationCode || ticket.destinationCode === subscription.destinationCode)
+    && ticket.departureDate >= subscription.departureDateFrom && ticket.departureDate <= subscription.departureDateTo
+    && (!includePrice || !subscription.maxPrice || ticket.price <= subscription.maxPrice)
+    && (!subscription.directOnly || ticket.isDirect) && (!subscription.roundTripOnly || ticket.returnDate)
+    && (!subscription.baggageRequired || ticket.hasBaggage) && ticket.tripClass === subscription.tripClass;
+}
+function dateRange(ticket) { return ticket.returnDate ? `${formatDate(ticket.departureDate)} — ${formatDate(ticket.returnDate)}` : formatDate(ticket.departureDate); }
+function historyScale(ticket) {
+  const score = ticket.dealScore ?? {}; const min = score.minPrice ?? ticket.price; const median = score.medianPrice ?? ticket.price; const max = score.maxPrice ?? ticket.price;
+  const position = Math.max(3, Math.min(97, (ticket.price - min) / Math.max(1, max - min) * 100));
+  return `<div class="price-scale"><span class="scale-marker" style="left:${position}%"></span></div><div class="scale-values"><span><small>Мин.</small>${formatPrice(min)}</span><span><small>Обычно</small>${formatPrice(median)}</span><span><small>Макс.</small>${formatPrice(max)}</span></div>`;
 }
 
-function errorScreen(error, retry) {
-  content.innerHTML = `<section class="screen error-state">
-    <span class="state-icon">${icon('wifi-off')}</span>
-    <div class="state-title">${pick('Не удалось загрузить данные', 'Ma’lumotlarni yuklab bo‘lmadi')}</div>
-    <div class="state-copy">${escapeHtml(error instanceof Error ? error.message : pick('Проверьте соединение и попробуйте снова.', 'Internet aloqasini tekshirib, qayta urinib ko‘ring.'))}</div>
-    <button id="retry" class="primary state-action" type="button">${pick('Повторить', 'Qayta urinish')}</button>
-  </section>`;
-  document.querySelector('#retry')?.addEventListener('click', () => void retry());
+function renderHome() {
+  state.screen = 'tabs'; showTabs(true); setActiveNav(); const hero = state.deals[0];
+  if (!hero) { content.innerHTML = `<section class="screen"><div class="topbar"><div><div class="brand">Hot Ticket</div><h1>Лучшие билеты</h1></div></div><div class="empty-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">Сейчас подходящих билетов нет</div><div class="state-copy">Продолжаем следить за маршрутами и покажем новый HotTicket здесь.</div></div></section>`; return; }
+  const discount = percentBelow(hero); const movers = [...state.deals.slice(1, 3), null];
+  const sampleDays = hero.dealScore?.sampleDays ?? 30;
+  const dayWord = sampleDays % 10 === 1 && sampleDays % 100 !== 11 ? 'день' : sampleDays % 10 >= 2 && sampleDays % 10 <= 4 && (sampleDays % 100 < 12 || sampleDays % 100 > 14) ? 'дня' : 'дней';
+  content.innerHTML = `<section class="screen home-screen"><header class="home-toolbar"><button id="origin-pill" class="origin-pill" type="button">Из ${escapeHtml(originNames[state.profile.defaultOriginCode] ?? state.profile.defaultOriginCode)}</button><span><button id="refresh-deals" class="icon-button" type="button" aria-label="Обновить">${icon('refresh')}</button><button id="filter-deals" class="icon-button" type="button" aria-label="Фильтры">${icon('filter')}</button></span></header><article class="hero-card"><div class="hero-label"><span>Лучший билет сейчас</span>${discount ? `<b>−${discount}% к обычной</b>` : ''}</div><button class="hero-main compact-hero" type="button" data-ticket="${hero.id}"><span><b>${escapeHtml(hero.originName)} → ${escapeHtml(hero.destinationName)}</b><small>${dateRange(hero)}</small></span><strong>${formatPrice(hero.price)} <small>UZS</small></strong></button><p class="price-caption">Цены по направлению за ${sampleDays} ${dayWord}</p>${historyScale(hero)}<div class="hero-actions"><button class="ghost-button primary-ghost" type="button" data-ticket="${hero.id}">${icon('ticket')} Открыть билет</button><button class="bell-button" type="button" data-track="${hero.id}" aria-label="Следить за направлением">${icon('bell')}</button></div></article><div class="section-heading"><div><h2>Подешевело за 3 дня</h2></div><small>4 маршрута</small></div><div class="mover-list">${movers.map((ticket) => ticket ? moverRow(ticket) : unavailableRow()).join('')}</div><button id="notifications-cta" class="notification-cta" type="button"><span class="cta-icon">${icon('bell')}</span><span><b>Бот пришлёт сообщение, когда цена упадёт</b></span><strong>Включить</strong></button></section>`;
+  bindTicketButtons(); document.querySelectorAll('[data-track]').forEach((button) => button.addEventListener('click', () => openTracking(Number(button.dataset.track))));
+  document.querySelector('#notifications-cta')?.addEventListener('click', () => openTracking(hero.id));
+  document.querySelector('#origin-pill')?.addEventListener('click', () => { state.view = 'profile'; void loadView(); });
+  document.querySelector('#refresh-deals')?.addEventListener('click', refreshDeals);
+  document.querySelector('#filter-deals')?.addEventListener('click', openRoutePicker);
 }
 
-function scoreBadge(score) {
-  if (score.level === 'lowest') {
-    return `<span class="deal-badge hot">${icon('flame')}${pick(`Самая низкая цена за ${score.sampleDays} дн.`, `${score.sampleDays} kundagi eng past narx`)}</span>`;
-  }
-  if (score.level === 'great') {
-    return `<span class="deal-badge hot">${icon('flame')}${pick(`Дешевле, чем ${score.percentile}% наблюдений`, `Kuzatuvlarning ${score.percentile}% idan arzon`)}</span>`;
-  }
-  if (score.level === 'good') {
-    return `<span class="deal-badge good">${icon('check')}${pick(`Дешевле, чем ${score.percentile}% наблюдений`, `Kuzatuvlarning ${score.percentile}% idan arzon`)}</span>`;
-  }
-  return '';
+async function refreshDeals() {
+  try { state.deals = (await api('/api/v1/deals?sort=best&limit=50')).items; haptic(); renderHome(); showToast('Цены обновлены'); }
+  catch (error) { showToast(error instanceof Error ? error.message : 'Не удалось обновить'); }
+}
+function moverRow(ticket) {
+  const delta = Math.max(4, Math.round((ticket.dealScore?.percentile ?? 60) / 8));
+  return `<article class="mover-row"><button class="mover-main" type="button" data-ticket="${ticket.id}"><span class="mover-route"><b>${escapeHtml(ticket.destinationName)}</b><small>${ticket.originCode} → ${ticket.destinationCode} · ${formatDate(ticket.departureDate)}</small></span><span class="mover-price"><b>${formatPrice(ticket.price)}</b><small>−${delta}% по маршруту</small></span></button><button class="row-bell" type="button" data-track="${ticket.id}" aria-label="Следить">${icon('bell')}</button></article>`;
+}
+function unavailableRow() { return `<article class="mover-row unavailable"><div class="mover-main"><span class="mover-route"><b>Москва</b><small>TAS → MOW</small></span><span class="mover-price"><b>Нет билетов</b><small>Продолжаем отслеживать</small></span></div><button class="row-bell" type="button" data-track-custom="MOW" aria-label="Следить">${icon('bell')}</button></article>`; }
+function bindTicketButtons() {
+  document.querySelectorAll('[data-ticket]').forEach((button) => button.addEventListener('click', () => void openTicket(Number(button.dataset.ticket))));
+  document.querySelectorAll('[data-track-custom]').forEach((button) => button.addEventListener('click', () => openTracking(null, button.dataset.trackCustom)));
 }
 
-function dealCard(ticket) {
-  const score = ticket.dealScore;
-  const dates = ticket.returnDate
-    ? `${formatDate(ticket.departureDate)} → ${formatDate(ticket.returnDate)}`
-    : formatDate(ticket.departureDate);
-  const history = score.sampleDays >= 7
-    ? pick(
-      `За ${score.sampleDays} дней наблюдали цены от ${formatPrice(score.minPrice)} до ${formatPrice(score.maxPrice)} UZS`,
-      `${score.sampleDays} kun ichida narxlar ${formatPrice(score.minPrice)} dan ${formatPrice(score.maxPrice)} UZS gacha bo‘ldi`
-    )
-    : pick('Собираем историю цены — оценка появится через несколько дней', 'Narx tarixini yig‘moqdamiz — baho bir necha kundan keyin chiqadi');
-  return `<button class="deal-card" type="button" data-ticket-id="${ticket.id}">
-    ${scoreBadge(score)}
-    <div class="route-code">${escapeHtml(ticket.originCode)} → ${escapeHtml(ticket.destinationCode)}</div>
-    <div class="route-name">${escapeHtml(displayLocationName(ticket.originName, ticket.originCode))} → ${escapeHtml(displayLocationName(ticket.destinationName, ticket.destinationCode))}</div>
-    <div class="deal-price">${escapeHtml(formatPrice(ticket.price))} <span class="currency">${escapeHtml(ticket.currencyCode)}</span></div>
-    <div class="trip-date">${escapeHtml(dates)}</div>
-    <div class="trip-meta">
-      <span class="meta-item">${icon('plane')}${ticket.isDirect ? pick('Прямой', 'To‘g‘ridan-to‘g‘ri') : pick('С пересадкой', 'Almashib')}</span>
-      <span class="meta-item">${icon('luggage')}${ticket.hasBaggage ? pick('С багажом', 'Bagaj bilan') : pick('Без багажа', 'Bagajsiz')}</span>
-    </div>
-    <div class="history-caption">${escapeHtml(history)}</div>
-  </button>`;
+async function openTicket(ticketId, subscriptionId = null) {
+  state.screen = 'detail'; showTabs(false); loading();
+  try { state.selectedTicket = await api(`/api/v1/tickets/${ticketId}${subscriptionId ? `?subscription_id=${subscriptionId}` : ''}`); await loadHistory(30); }
+  catch (error) { errorScreen(error, () => openTicket(ticketId, subscriptionId)); }
 }
-
-function renderDeals() {
-  state.screen = 'tabs';
-  showTabs(true);
-  setActiveNav();
-  const filterCount = Number(Boolean(state.filters.destination)) + Number(Boolean(state.filters.maxPrice));
-  content.innerHTML = `<section class="screen">
-    <header class="screen-header">
-      <div><div class="eyebrow">HOT TICKET</div><h1>${pick('Горящие билеты', 'Qaynoq chiptalar')}</h1><div class="subtitle">${pick('Город вылета', 'Uchish shahri')}: ${escapeHtml(originName())}</div></div>
-      <button id="refresh-deals" class="icon-button" type="button" aria-label="${pick('Обновить', 'Yangilash')}">${icon('refresh')}</button>
-    </header>
-    <div class="chip-strip">
-      <button id="open-filters" class="chip ${filterCount ? 'active' : ''}" type="button">${icon('filter')}${pick('Фильтры', 'Filtrlar')}${filterCount ? ` (${filterCount})` : ''}</button>
-      <button class="chip ${state.filters.direct ? 'active' : ''}" data-quick-filter="direct" type="button">${pick('Прямые', 'To‘g‘ridan-to‘g‘ri')}</button>
-      <button class="chip ${state.filters.baggage ? 'active' : ''}" data-quick-filter="baggage" type="button">${pick('С багажом', 'Bagaj bilan')}</button>
-      <button id="cycle-sort" class="chip" type="button">${escapeHtml(sortLabels[state.filters.sort])} ▾</button>
-    </div>
-    <div class="deal-list">${state.deals.length
-      ? state.deals.map(dealCard).join('')
-      : `<div class="empty-state"><span class="state-icon">${icon('search')}</span><div class="state-title">${pick('Нет результатов по фильтрам', 'Filtrlarga mos natija yo‘q')}</div><div class="state-copy">${pick('Попробуйте изменить условия поиска', 'Qidiruv shartlarini o‘zgartirib ko‘ring')}</div><button id="reset-filters" class="secondary state-action" type="button">${pick('Сбросить фильтры', 'Filtrlarni tozalash')}</button></div>`}
-    </div>
-  </section>`;
-  document.querySelector('#refresh-deals')?.addEventListener('click', () => { haptic(); void loadDeals(); });
-  document.querySelector('#open-filters')?.addEventListener('click', () => openFilterSheet());
-  document.querySelectorAll('[data-quick-filter]').forEach((button) => button.addEventListener('click', () => {
-    const key = button.dataset.quickFilter;
-    state.filters[key] = !state.filters[key];
-    haptic();
-    void loadDeals(false);
-  }));
-  document.querySelector('#cycle-sort')?.addEventListener('click', () => {
-    const keys = Object.keys(sortLabels);
-    state.filters.sort = keys[(keys.indexOf(state.filters.sort) + 1) % keys.length];
-    void loadDeals(false);
-  });
-  document.querySelectorAll('[data-ticket-id]').forEach((button) => button.addEventListener('click', () => {
-    haptic();
-    void openTicket(Number(button.dataset.ticketId));
-  }));
-  document.querySelector('#reset-filters')?.addEventListener('click', () => {
-    state.filters = { destination: '', maxPrice: '', direct: false, baggage: false, sort: 'best' };
-    void loadDeals();
-  });
+async function loadHistory(days) {
+  state.historyRange = days; const ticket = state.selectedTicket;
+  try { state.history = (await api(`/api/v1/routes/${ticket.originCode}/${ticket.destinationCode}/history?days=${days}`)).items; }
+  catch { state.history = []; }
+  renderDetail();
 }
-
-async function loadDeals(showLoader = true) {
-  if (showLoader) loadingScreen();
-  const query = new URLSearchParams({ sort: state.filters.sort, limit: '30' });
-  if (state.filters.destination) query.set('destination', state.filters.destination);
-  if (state.filters.maxPrice) query.set('max_price', state.filters.maxPrice);
-  if (state.filters.direct) query.set('direct', '1');
-  if (state.filters.baggage) query.set('baggage', '1');
-  try {
-    const [deals, destinations] = await Promise.all([
-      api(`/api/v1/deals?${query.toString()}`),
-      state.destinations.length ? Promise.resolve({ items: state.destinations }) : api('/api/v1/destinations')
-    ]);
-    state.deals = deals.items;
-    state.destinations = destinations.items.map((item) => ({
-      ...item,
-      name: displayLocationName(item.name, item.code)
-    }));
-    renderDeals();
-  } catch (error) {
-    errorScreen(error, loadDeals);
-  }
-}
-
-function destinationChoices(selected, attribute) {
-  const options = [{ code: '', name: pick('Куда угодно', 'Istalgan joyga') }, ...state.destinations];
-  return options.map((item) => `<button class="choice ${selected === item.code ? 'active' : ''}" type="button" ${attribute}="${escapeHtml(item.code)}">${escapeHtml(item.name)}</button>`).join('');
-}
-
-function openFilterSheet(pending = { ...state.filters }) {
-  filterSheet.innerHTML = `<div class="sheet-handle"></div>
-    <div class="sheet-title-row"><h2 id="filter-title">${pick('Фильтры', 'Filtrlar')}</h2><button id="close-sheet" class="icon-button sheet-close" type="button" aria-label="${pick('Закрыть', 'Yopish')}">${icon('x')}</button></div>
-    <div class="form-label">${pick('Направление', 'Yo‘nalish')}</div>
-    <div id="sheet-destinations" class="choice-list">${destinationChoices(pending.destination, 'data-sheet-destination')}</div>
-    <label class="form-label" for="sheet-price">${pick('Цена до, UZS', 'Narxgacha, UZS')}</label>
-    <input id="sheet-price" class="full-input" type="number" min="1" step="10000" inputmode="numeric" value="${escapeHtml(pending.maxPrice)}" placeholder="${pick('Без ограничения', 'Cheklovsiz')}">
-    <div class="form-label">${pick('Сортировка', 'Saralash')}</div>
-    <div class="sort-list">${Object.entries(sortLabels).map(([key, label]) => `<button class="sort-option ${pending.sort === key ? 'active' : ''}" type="button" data-sheet-sort="${key}"><span>${escapeHtml(label)}</span>${pending.sort === key ? icon('check') : ''}</button>`).join('')}</div>
-    <button id="apply-filters" class="primary" type="button">${pick('Применить', 'Qo‘llash')}</button>`;
-  filterSheet.classList.remove('hidden');
-  sheetBackdrop.classList.remove('hidden');
-  const rerender = () => {
-    closeFilterSheet();
-    openFilterSheet(pending);
-  };
-  document.querySelectorAll('[data-sheet-destination]').forEach((button) => button.addEventListener('click', () => {
-    pending.destination = button.dataset.sheetDestination;
-    rerender();
-  }));
-  document.querySelectorAll('[data-sheet-sort]').forEach((button) => button.addEventListener('click', () => {
-    pending.sort = button.dataset.sheetSort;
-    rerender();
-  }));
-  document.querySelector('#sheet-price')?.addEventListener('input', (event) => { pending.maxPrice = event.target.value; });
-  document.querySelector('#close-sheet')?.addEventListener('click', closeFilterSheet);
-  document.querySelector('#apply-filters')?.addEventListener('click', () => {
-    state.filters = { ...state.filters, ...pending, maxPrice: document.querySelector('#sheet-price')?.value ?? '' };
-    closeFilterSheet();
-    void loadDeals();
-  });
-}
-
-function closeFilterSheet() {
-  filterSheet.classList.add('hidden');
-  sheetBackdrop.classList.add('hidden');
-}
-
-function historyStats(points) {
-  const values = points.map((point) => point.minPrice).sort((left, right) => left - right);
-  if (!values.length) return null;
-  const middle = Math.floor(values.length / 2);
-  return {
-    min: values[0],
-    median: values.length % 2 ? values[middle] : Math.round((values[middle - 1] + values[middle]) / 2),
-    max: values.at(-1)
-  };
-}
-
-function detailBadge(score) {
-  return scoreBadge(score);
-}
-
 function renderDetail() {
-  const ticket = state.selectedTicket;
-  const enoughHistory = state.history.length >= 7;
-  const stats = historyStats(state.history);
-  const percentile = ticket.dealScore.level === 'lowest'
-    ? pick(
-      `Самая низкая цена за ${ticket.dealScore.sampleDays} дней наблюдений`,
-      `${ticket.dealScore.sampleDays} kunlik kuzatuvdagi eng past narx`
-    )
-    : ticket.dealScore.percentile === null
-      ? ''
-      : pick(
-        `Текущая цена ниже ${ticket.dealScore.percentile}% наблюдений`,
-        `Joriy narx kuzatuvlarning ${ticket.dealScore.percentile}% idan past`
-      );
-  showTabs(false);
-  content.innerHTML = `<section class="screen without-tabs">
-    <div class="back-row"><button id="back-to-deals" class="back-button" type="button" aria-label="${pick('Назад', 'Orqaga')}">${icon('chevron-left')}</button><span class="back-label">${pick('Назад к предложениям', 'Takliflarga qaytish')}</span></div>
-    <div class="detail-route">${escapeHtml(displayLocationName(ticket.originName, ticket.originCode))} → ${escapeHtml(displayLocationName(ticket.destinationName, ticket.destinationCode))}</div>
-    <div class="detail-price">${escapeHtml(formatPrice(ticket.price))} <span class="currency">${escapeHtml(ticket.currencyCode)}</span></div>
-    ${detailBadge(ticket.dealScore)}
-    <div class="updated">${pick('Обновлено', 'Yangilangan')}: ${escapeHtml(relativeTime(ticket.lastSeenAt))}</div>
-    <div class="panel">
-      <div class="info-row"><span class="info-label">${pick('Вылет', 'Uchish')}</span><span class="info-value">${escapeHtml(formatDate(ticket.departureDate))}</span></div>
-      ${ticket.returnDate ? `<div class="info-row"><span class="info-label">${pick('Обратно', 'Qaytish')}</span><span class="info-value">${escapeHtml(formatDate(ticket.returnDate))}</span></div>` : ''}
-      <div class="info-row"><span class="info-label">${pick('Рейс', 'Reys')}</span><span class="info-value">${ticket.isDirect ? pick('Прямой', 'To‘g‘ridan-to‘g‘ri') : pick('С пересадкой', 'Almashib')}</span></div>
-      <div class="info-row"><span class="info-label">${pick('Багаж', 'Bagaj')}</span><span class="info-value">${ticket.hasBaggage ? pick('Есть', 'Bor') : pick('Нет', 'Yo‘q')}</span></div>
-      <div class="info-row"><span class="info-label">${pick('Авиакомпания', 'Aviakompaniya')}</span><span class="info-value">${escapeHtml(ticket.airlineName ?? pick('Не указана', 'Ko‘rsatilmagan'))}</span></div>
-      <div class="info-row"><span class="info-label">${pick('Класс', 'Klass')}</span><span class="info-value">${ticket.tripClass === 'business' ? pick('Бизнес', 'Biznes') : pick('Эконом', 'Ekonom')}</span></div>
-    </div>
-    ${enoughHistory ? `<div class="panel">
-      <div class="panel-title-row"><h2>${pick('История цены', 'Narx tarixi')}</h2><div class="range-tabs">${[7, 30, 90].map((range) => `<button class="range-button ${state.historyRange === range ? 'active' : ''}" type="button" data-history-range="${range}">${range}${pick('д', 'k')}</button>`).join('')}</div></div>
-      <div class="chart-wrap"><canvas id="price-chart" class="chart-canvas" aria-label="${pick('История минимальной цены', 'Eng past narx tarixi')}"></canvas></div>
-      <div class="history-period">${pick(`За ${state.history.length} дней наблюдений`, `${state.history.length} kunlik kuzatuv`)}</div>
-      <div class="stat-row"><span class="stat-label">${pick('Минимум', 'Minimum')}</span><span class="stat-value">${escapeHtml(formatPrice(stats.min))}</span></div>
-      <div class="stat-row"><span class="stat-label">${pick('Медиана', 'Mediana')}</span><span class="stat-value">${escapeHtml(formatPrice(stats.median))}</span></div>
-      <div class="stat-row"><span class="stat-label">${pick('Максимум', 'Maksimum')}</span><span class="stat-value">${escapeHtml(formatPrice(stats.max))}</span></div>
-      ${percentile ? `<div class="percentile-copy">${escapeHtml(percentile)}</div>` : ''}
-    </div>` : `<div class="panel empty-state"><span class="state-icon">${icon('chart')}</span><div class="state-title">${pick('Собираем историю этого маршрута', 'Bu yo‘nalish tarixini yig‘moqdamiz')}</div><div class="state-copy">${pick('Для достоверной оценки нужно ещё несколько дней наблюдений.', 'Ishonchli baho uchun yana bir necha kunlik kuzatuv kerak.')}</div></div>`}
-    <button id="open-ticket" class="primary" type="button">${icon('ticket')}${pick('Открыть билет', 'Chiptani ochish')}</button>
-    <button id="watch-ticket" class="secondary" type="button">${icon('bell')}${pick('Отслеживать направление', 'Yo‘nalishni kuzatish')}</button>
-  </section>`;
-  document.querySelector('#back-to-deals')?.addEventListener('click', renderDeals);
-  document.querySelector('#open-ticket')?.addEventListener('click', () => {
-    haptic('medium');
-    if (telegram?.openLink) telegram.openLink(ticket.openUrl);
-    else globalThis.open(ticket.openUrl, '_blank');
-  });
-  document.querySelector('#watch-ticket')?.addEventListener('click', () => openCreate(ticket.destinationCode, ticket));
-  document.querySelectorAll('[data-history-range]').forEach((button) => button.addEventListener('click', () => {
-    void loadHistory(Number(button.dataset.historyRange));
-  }));
-  if (enoughHistory) drawChart(state.history);
+  const ticket = state.selectedTicket; const discount = percentBelow(ticket);
+  content.innerHTML = `<section class="screen detail-screen"><header class="detail-top"><button id="back-detail" class="back-button" type="button" aria-label="Назад">${icon('chevron-left')}</button><button id="share-ticket" class="text-button" type="button">${icon('arrow-up-right')} Отправить в чат</button></header><div class="detail-route">${ticket.originCode} → ${ticket.destinationCode}</div><h1>${escapeHtml(ticket.originName)} → ${escapeHtml(ticket.destinationName)}</h1><div class="detail-price">${formatPrice(ticket.price)} <small>UZS</small></div>${discount ? `<div class="deal-pill">На ${discount}% ниже обычной</div>` : ''}<div class="updated">Обновлено недавно</div><article class="panel chart-panel"><div class="panel-title-row"><div><h2>Цены маршрута</h2><p>${ticket.originCode} → ${ticket.destinationCode}</p></div><div class="range-tabs">${[7, 30, 90].map((days) => `<button class="range-button ${state.historyRange === days ? 'active' : ''}" type="button" data-range="${days}">${days}д</button>`).join('')}</div></div><canvas id="price-chart" class="chart-canvas" width="650" height="230"></canvas>${historyScale(ticket)}<div class="percentile-copy">Одна из самых низких цен на этом маршруте за ${state.historyRange} дней.</div></article><article class="panel"><h2 class="panel-heading">Этот билет</h2><div class="info-row"><span>Даты</span><b>${dateRange(ticket)}</b></div><div class="info-row"><span>Рейс</span><b>${ticket.isDirect ? 'Прямой' : 'С пересадкой'}</b></div><div class="info-row"><span>Багаж</span><b>${ticket.hasBaggage ? 'Включён' : 'Без багажа'}</b></div><div class="info-row"><span>Класс</span><b>${className(ticket.tripClass)}</b></div><div class="info-row"><span>Авиакомпания</span><b>${escapeHtml(ticket.airlineName ?? 'Не указана')}</b></div></article><button id="track-detail" class="secondary" type="button">${icon('bell')} Следить за маршрутом</button></section><div class="purchase-bar"><a class="primary" href="${escapeHtml(ticket.openUrl)}" target="_blank" rel="noopener">Купить за ${formatPrice(ticket.price)} UZS</a></div>`;
+  document.querySelector('#back-detail')?.addEventListener('click', backToTabs); document.querySelector('#track-detail')?.addEventListener('click', () => openTracking(ticket.id));
+  document.querySelector('#share-ticket')?.addEventListener('click', () => shareText(`Hot Ticket: ${ticket.originCode} → ${ticket.destinationCode} за ${formatPrice(ticket.price)} UZS`, ticket.shareUrl ?? ticket.openUrl));
+  document.querySelectorAll('[data-range]').forEach((button) => button.addEventListener('click', () => void loadHistory(Number(button.dataset.range)))); globalThis.requestAnimationFrame(drawChart);
 }
-
-function drawChart(points) {
-  const canvas = document.querySelector('#price-chart');
-  const context = canvas?.getContext('2d');
-  if (!canvas || !context || points.length < 2) return;
-  const width = canvas.clientWidth;
-  const height = canvas.clientHeight;
-  const ratio = globalThis.devicePixelRatio || 1;
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
-  context.scale(ratio, ratio);
-  const values = points.map((point) => point.minPrice);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const median = historyStats(points).median;
-  const range = Math.max(1, max - min);
-  const pad = 9;
-  const coordinates = values.map((value, index) => ({
-    x: pad + (index / (values.length - 1)) * (width - pad * 2),
-    y: pad + ((max - value) / range) * (height - pad * 2)
-  }));
-  const medianY = pad + ((max - median) / range) * (height - pad * 2);
-  context.setLineDash([4, 5]);
-  context.strokeStyle = '#5c6b78';
-  context.lineWidth = 1;
-  context.beginPath();
-  context.moveTo(0, medianY);
-  context.lineTo(width, medianY);
-  context.stroke();
-  context.setLineDash([]);
-  context.beginPath();
-  context.moveTo(coordinates[0].x, height);
-  for (const point of coordinates) context.lineTo(point.x, point.y);
-  context.lineTo(coordinates.at(-1).x, height);
-  context.closePath();
-  context.fillStyle = 'rgba(79, 170, 241, 0.14)';
-  context.fill();
-  context.beginPath();
-  coordinates.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y));
-  context.strokeStyle = '#4faaf1';
-  context.lineWidth = 2.5;
-  context.lineJoin = 'round';
-  context.lineCap = 'round';
-  context.stroke();
-  const last = coordinates.at(-1);
-  context.beginPath();
-  context.arc(last.x, last.y, 8, 0, Math.PI * 2);
-  context.fillStyle = 'rgba(79, 170, 241, 0.22)';
-  context.fill();
-  context.beginPath();
-  context.arc(last.x, last.y, 4, 0, Math.PI * 2);
-  context.fillStyle = '#4faaf1';
-  context.fill();
+function drawChart() {
+  const canvas = document.querySelector('#price-chart'); if (!canvas) return; const context = canvas.getContext('2d');
+  const values = state.history.map((item) => item.minPrice).filter(Number.isFinite); if (values.length < 2) { canvas.classList.add('empty-chart'); return; }
+  const min = Math.min(...values); const max = Math.max(...values); const points = values.map((value, index) => ({ x: 14 + index / (values.length - 1) * (canvas.width - 28), y: 18 + (max - value) / Math.max(1, max - min) * (canvas.height - 42) }));
+  context.clearRect(0, 0, canvas.width, canvas.height); context.strokeStyle = 'rgba(255,255,255,.08)'; context.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach((ratio) => { context.beginPath(); context.moveTo(0, canvas.height * ratio); context.lineTo(canvas.width, canvas.height * ratio); context.stroke(); });
+  context.beginPath(); points.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y)); context.strokeStyle = '#4faaf1'; context.lineWidth = 5; context.lineJoin = 'round'; context.stroke();
+  const last = points.at(-1); context.beginPath(); context.arc(last.x, last.y, 8, 0, Math.PI * 2); context.fillStyle = '#4faaf1'; context.fill();
 }
+function backToTabs() { state.screen = 'tabs'; void loadView(); }
 
-async function loadHistory(range) {
-  state.historyRange = range;
-  try {
-    const ticket = state.selectedTicket;
-    const result = await api(`/api/v1/routes/${ticket.originCode}/${ticket.destinationCode}/history?days=${range}`);
-    state.history = result.items;
-    renderDetail();
-  } catch (error) {
-    showToast(error instanceof Error ? error.message : pick('Не удалось загрузить историю', 'Tarixni yuklab bo‘lmadi'));
-  }
+function defaultTrackingForm(ticket = null, destinationCode = '') {
+  return { id: null, destinationCode: ticket?.destinationCode ?? destinationCode, departureDateFrom: ticket?.departureDate ?? todayInTashkent(), departureDateTo: ticket?.returnDate ?? todayInTashkent(90), maxPrice: ticket ? Math.max(10_000, Math.round(ticket.price * 0.9 / 10_000) * 10_000) : null, directOnly: ticket?.isDirect ?? false, baggageRequired: ticket?.hasBaggage ?? state.profile.baggageRequired, roundTripOnly: Boolean(ticket?.returnDate), tripClass: ticket?.tripClass ?? state.profile.preferredTripClass, preset: '90', expanded: false, sourcePrice: ticket?.price ?? null };
 }
-
-async function openTicket(ticketId) {
-  state.screen = 'detail';
-  showTabs(false);
-  loadingScreen();
-  try {
-    state.selectedTicket = await api(`/api/v1/tickets/${ticketId}`);
-    await loadHistory(30);
-  } catch (error) {
-    errorScreen(error, () => openTicket(ticketId));
-  }
+function openTracking(ticketId = null, destinationCode = '', subscription = null) {
+  const ticket = ticketId ? state.deals.find((item) => item.id === ticketId) ?? state.selectedTicket : null;
+  state.sheetForm = subscription ? { ...subscription, preset: 'custom', expanded: true, sourcePrice: subscription.currentTicket?.price ?? null } : defaultTrackingForm(ticket, destinationCode);
+  renderTrackingSheet(); sheet.classList.remove('hidden'); backdrop.classList.remove('hidden');
 }
-
-function subscriptionDestination(subscription) {
-  if (subscription.destinationCode === null) return { code: '', name: pick('Куда угодно', 'Istalgan joyga') };
-  return state.destinations.find((item) => item.code === subscription.destinationCode)
-    ?? { code: subscription.destinationCode, name: subscription.destinationCode };
+function closeSheet() { sheet.classList.add('hidden'); backdrop.classList.add('hidden'); state.sheetForm = null; }
+function renderTrackingSheet() {
+  const form = state.sheetForm; const destination = state.destinations.find((item) => item.code === form.destinationCode); const name = destination?.name ?? form.destinationCode ?? 'направлением';
+  const maxRange = Math.max(form.sourcePrice ?? form.maxPrice ?? 3_000_000, form.maxPrice ?? 0);
+  const minRange = Math.max(10_000, Math.round(maxRange * .5 / 10_000) * 10_000);
+  sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>${form.id ? 'Настроить' : 'Следить за'} ${escapeHtml(name)}</h2><p>Бот напишет, когда появится подходящий билет дешевле выбранной цены.</p></div><button id="close-sheet" class="icon-button sheet-close" type="button" aria-label="Закрыть">${icon('x')}</button></div><div class="form-label">Когда летим</div><div class="preset-row"><button class="choice ${form.preset === '90' ? 'active' : ''}" type="button" data-preset="90">Ближайшие 90 дней</button><button class="choice ${form.preset === 'september' ? 'active' : ''}" type="button" data-preset="september">Сентябрь</button><button class="choice ${form.preset === 'custom' ? 'active' : ''}" type="button" data-preset="custom">Свои даты</button></div>${form.preset === 'custom' ? `<div class="form-grid"><label><span class="form-label">С</span><input id="track-from" type="date" value="${form.departureDateFrom}"></label><label><span class="form-label">По</span><input id="track-to" type="date" value="${form.departureDateTo}"></label></div>` : ''}<div class="price-row"><span>Цена до</span><b id="track-price-label">${formatPrice(form.maxPrice ?? maxRange)} UZS</b></div><input id="track-price" class="price-range" type="range" min="${minRange}" max="${maxRange}" step="10000" value="${form.maxPrice ?? maxRange}">${form.sourcePrice ? `<p class="field-help">На 10% ниже текущей ${formatPrice(form.sourcePrice)} UZS</p>` : ''}<div class="toggle-card"><div class="toggle-row"><span><b>Только прямые рейсы</b><small>Без пересадок</small></span><button class="switch ${form.directOnly ? 'active' : ''}" type="button" data-form-toggle="directOnly"></button></div><div class="toggle-row"><span><b>Нужен багаж</b><small>Багаж включён в билет</small></span><button class="switch ${form.baggageRequired ? 'active' : ''}" type="button" data-form-toggle="baggageRequired"></button></div></div><button id="advanced-toggle" class="advanced-toggle" type="button">Дополнительные условия <span>${form.expanded ? '−' : '+'}</span></button>${form.expanded ? `<div class="advanced-panel"><div class="segments"><button class="segment ${form.tripClass === 'economy' ? 'active' : ''}" type="button" data-form-class="economy">Эконом</button><button class="segment ${form.tripClass === 'business' ? 'active' : ''}" type="button" data-form-class="business">Бизнес</button></div><div class="toggle-row"><span><b>Туда-обратно</b></span><button class="switch ${form.roundTripOnly ? 'active' : ''}" type="button" data-form-toggle="roundTripOnly"></button></div></div>` : '<p class="advanced-summary">Эконом · туда-обратно по выбору</p>'}<button id="save-tracking" class="primary sheet-primary" type="button">${form.id ? 'Сохранить изменения' : `${icon('bell')} Следить за ценой`}</button>${form.id ? '<button id="disable-tracking" class="danger-link" type="button">Отключить отслеживание</button>' : ''}`;
+  bindTrackingSheet();
+}
+function bindTrackingSheet() {
+  const form = state.sheetForm; document.querySelector('#close-sheet')?.addEventListener('click', closeSheet);
+  sheet.querySelectorAll('[data-preset]').forEach((button) => button.addEventListener('click', () => { form.preset = button.dataset.preset; if (form.preset === '90') { form.departureDateFrom = todayInTashkent(); form.departureDateTo = todayInTashkent(90); } if (form.preset === 'september') { form.departureDateFrom = '2026-09-01'; form.departureDateTo = '2026-09-30'; } renderTrackingSheet(); }));
+  sheet.querySelectorAll('[data-form-toggle]').forEach((button) => button.addEventListener('click', () => { form[button.dataset.formToggle] = !form[button.dataset.formToggle]; haptic(); renderTrackingSheet(); }));
+  sheet.querySelectorAll('[data-form-class]').forEach((button) => button.addEventListener('click', () => { form.tripClass = button.dataset.formClass; renderTrackingSheet(); }));
+  document.querySelector('#advanced-toggle')?.addEventListener('click', () => { form.expanded = !form.expanded; renderTrackingSheet(); });
+  document.querySelector('#track-from')?.addEventListener('change', (event) => { form.departureDateFrom = event.target.value; form.preset = 'custom'; });
+  document.querySelector('#track-to')?.addEventListener('change', (event) => { form.departureDateTo = event.target.value; form.preset = 'custom'; });
+  document.querySelector('#track-price')?.addEventListener('input', (event) => { form.maxPrice = Number(event.target.value); document.querySelector('#track-price-label').textContent = `${formatPrice(form.maxPrice)} UZS`; });
+  document.querySelector('#save-tracking')?.addEventListener('click', saveTracking); document.querySelector('#disable-tracking')?.addEventListener('click', disableTracking);
+}
+async function saveTracking() {
+  const form = state.sheetForm; if (!form.destinationCode || !form.departureDateFrom || !form.departureDateTo || form.departureDateTo < form.departureDateFrom) { showToast('Проверьте направление и даты'); return; }
+  const body = { destinationCode: form.destinationCode, departureDateFrom: form.departureDateFrom, departureDateTo: form.departureDateTo, maxPrice: form.maxPrice, directOnly: form.directOnly, roundTripOnly: form.roundTripOnly, baggageRequired: form.baggageRequired, tripClass: form.tripClass };
+  try { await api(form.id ? `/api/v1/subscriptions/${form.id}` : '/api/v1/subscriptions', { method: form.id ? 'PATCH' : 'POST', body: JSON.stringify(body) }); state.subscriptions = (await api('/api/v1/subscriptions')).items.filter((item) => item.isActive); closeSheet(); haptic('medium'); showToast(form.id ? 'Изменения сохранены' : 'Отслеживание включено'); if (state.view === 'watchlist') renderWatchlist(); else setActiveNav(); }
+  catch (error) { showToast(error instanceof Error ? error.message : 'Не удалось сохранить'); }
+}
+async function disableTracking() {
+  try { const id = state.sheetForm.id; await api(`/api/v1/subscriptions/${id}`, { method: 'DELETE' }); state.subscriptions = state.subscriptions.filter((item) => item.id !== id); closeSheet(); showToast('Отслеживание отключено'); renderWatchlist(); }
+  catch (error) { showToast(error.message); }
 }
 
 function renderWatchlist() {
-  state.screen = 'tabs';
-  showTabs(true);
-  setActiveNav();
-  const active = state.subscriptions.filter((item) => item.isActive).length;
-  content.innerHTML = `<section class="screen">
-    <div class="watch-head"><h1>${pick('Мои отслеживания', 'Mening kuzatuvlarim')}</h1><div class="watch-count">${pick(`${active} из 20`, `${active} / 20`)}</div></div>
-    <button id="new-watch" class="add-watch" type="button">${icon('plus')}${pick('Отслеживать направление', 'Yo‘nalishni kuzatish')}</button>
-    ${state.subscriptions.length ? state.subscriptions.map((item) => {
-      const destination = subscriptionDestination(item);
-      const conditions = [
-        item.maxPrice ? pick(`Цена до ${formatPrice(item.maxPrice)} UZS`, `${formatPrice(item.maxPrice)} UZS gacha`) : pick('Без ограничения цены', 'Narx cheklovisiz'),
-        item.directOnly ? pick('Только прямые', 'Faqat to‘g‘ridan-to‘g‘ri') : null,
-        item.baggageRequired ? pick('С багажом', 'Bagaj bilan') : null
-      ].filter(Boolean).join(' · ');
-      return `<article class="watch-card ${item.isActive ? '' : 'inactive'}">
-        <div class="route-code">${escapeHtml(item.originCode)} → ${escapeHtml(destination.code || 'ANY')}</div>
-        <div class="route-name">${escapeHtml(originName(item.originCode))} → ${escapeHtml(destination.name)}</div>
-        <div class="trip-date">${escapeHtml(item.departureDateFrom)} – ${escapeHtml(item.departureDateTo)}</div>
-        <div class="trip-meta">${escapeHtml(conditions)}</div>
-        <div class="watch-card-footer"><span class="watch-status">${item.isActive ? pick('Активно', 'Faol') : pick('Отключено', 'O‘chirilgan')}</span>${item.isActive ? `<button class="small-action" type="button" data-disable-watch="${item.id}">${pick('Отключить', 'O‘chirish')}</button>` : ''}</div>
-      </article>`;
-    }).join('') : `<div class="empty-state"><span class="state-icon">${icon('bell')}</span><div class="state-title">${pick('Пока нет активных отслеживаний', 'Hozircha faol kuzatuvlar yo‘q')}</div><div class="state-copy">${pick('Создайте первое направление — бот сообщит, когда появится билет.', 'Birinchi yo‘nalishni yarating — chipta paydo bo‘lsa, bot xabar beradi.')}</div></div>`}
-  </section>`;
-  document.querySelector('#new-watch')?.addEventListener('click', () => openCreate(''));
-  document.querySelectorAll('[data-disable-watch]').forEach((button) => button.addEventListener('click', async () => {
-    try {
-      await api(`/api/v1/subscriptions/${button.dataset.disableWatch}`, { method: 'DELETE' });
-      haptic();
-      showToast(pick('Отслеживание отключено', 'Kuzatuv o‘chirildi'));
-      await loadWatchlist(false);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : pick('Не удалось отключить', 'O‘chirib bo‘lmadi'));
-    }
-  }));
+  state.screen = 'tabs'; showTabs(true); setActiveNav(); const active = state.subscriptions.filter((item) => item.isActive);
+  content.innerHTML = `<section class="screen"><header class="watch-head"><div><div class="brand">Watchlist</div><h1>Мои отслеживания</h1><p>${active.length} из 20 · бот следит постоянно</p></div></header>${active.length ? `<div class="watch-list">${active.map(watchCard).join('')}</div>` : `<div class="empty-state"><span class="state-icon">${icon('bell')}</span><div class="state-title">Нет активных маршрутов</div><div class="state-copy">Включите отслеживание, и бот напишет при подходящей цене.</div></div>`}<div class="section-heading compact"><div><h2>Часто отслеживают</h2><p>Популярные направления из Ташкента</p></div></div><div class="suggestion-grid">${state.destinations.slice(0, 4).map((item) => `<button class="suggestion" type="button" data-add-destination="${item.code}"><b>${escapeHtml(item.name)}</b><small>TAS → ${item.code}</small>${icon('plus')}</button>`).join('')}</div><button id="custom-route" class="add-watch" type="button">${icon('plus')} Своё направление</button></section>`;
+  document.querySelectorAll('[data-edit-watch]').forEach((button) => button.addEventListener('click', () => openTracking(null, '', active.find((item) => item.id === Number(button.dataset.editWatch)))));
+  document.querySelectorAll('[data-current-ticket]').forEach((button) => button.addEventListener('click', () => void openTicket(Number(button.dataset.currentTicket), Number(button.dataset.subscriptionId))));
+  document.querySelectorAll('[data-add-destination]').forEach((button) => button.addEventListener('click', () => openTracking(null, button.dataset.addDestination)));
+  document.querySelector('#custom-route')?.addEventListener('click', openRoutePicker);
 }
-
-async function loadWatchlist(showLoader = true) {
-  if (showLoader) loadingScreen();
-  try {
-    const result = await api('/api/v1/subscriptions');
-    state.subscriptions = result.items;
-    renderWatchlist();
-  } catch (error) {
-    errorScreen(error, loadWatchlist);
-  }
+function watchCard(subscription) {
+  const destination = state.destinations.find((item) => item.code === subscription.destinationCode); const current = subscription.currentTicket ?? null; const reached = current && ticketMatches(current, subscription, true); const progress = current && subscription.maxPrice ? Math.max(0, Math.min(100, subscription.maxPrice / current.price * 100)) : 0;
+  const conditions = [className(subscription.tripClass), subscription.directOnly ? 'прямой' : 'пересадки допустимы', subscription.baggageRequired ? 'с багажом' : 'багаж не важен', subscription.roundTripOnly ? 'туда-обратно' : null].filter(Boolean).join(' · ');
+  return `<article class="watch-card"><div class="watch-top"><div><div class="route-code">${subscription.originCode} → ${subscription.destinationCode}</div><h2>${escapeHtml(originNames[subscription.originCode] ?? subscription.originCode)} → ${escapeHtml(destination?.name ?? subscription.destinationCode)}</h2></div><span class="status-pill">Активно</span></div><p class="watch-dates">${formatDate(subscription.departureDateFrom)} — ${formatDate(subscription.departureDateTo)} · ${escapeHtml(conditions)}</p><div class="watch-prices"><span><small>Ваша цель</small><b>${subscription.maxPrice ? `${formatPrice(subscription.maxPrice)} UZS` : 'Любая цена'}</b></span><span><small>Сейчас от</small><b>${current ? `${formatPrice(current.price)} UZS` : 'Нет билетов'}</b></span></div>${current && subscription.maxPrice ? `<div class="goal-track"><span style="width:${progress}%"></span></div><p class="goal-copy ${reached ? 'reached' : ''}">${reached ? 'Цена достигла вашей цели' : `Нужно ещё −${formatPrice(Math.max(0, current.price - subscription.maxPrice))} UZS`}</p>` : '<p class="goal-copy">Продолжаем искать подходящий HotTicket</p>'}<div class="watch-actions">${current ? `<button class="ghost-button" type="button" data-current-ticket="${current.id}" data-subscription-id="${subscription.id}">Открыть билет</button>` : '<span></span>'}<button class="small-action" type="button" data-edit-watch="${subscription.id}">Настроить</button></div></article>`;
 }
-
-function todayInTashkent(offsetDays = 0) {
-  const date = new Date(Date.now() + offsetDays * 86_400_000);
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
-  const part = (type) => parts.find((item) => item.type === type)?.value ?? '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
-
-function renderCreate() {
-  const form = state.form;
-  showTabs(false);
-  content.innerHTML = `<section class="screen without-tabs">
-    <div class="back-row"><button id="close-create" class="back-button" type="button" aria-label="${pick('Назад', 'Orqaga')}">${icon('chevron-left')}</button><h2>${pick('Новое отслеживание', 'Yangi kuzatuv')}</h2></div>
-    <div class="form-label">${pick('Направление', 'Yo‘nalish')}</div>
-    <div class="choice-list">${destinationChoices(form.destinationCode, 'data-form-destination')}</div>
-    <div class="form-grid">
-      <label class="field"><span class="form-label">${pick('Вылет от', 'Uchish sanasi')}</span><input id="form-from" type="date" value="${escapeHtml(form.departureDateFrom)}" required></label>
-      <label class="field"><span class="form-label">${pick('Вылет до', 'Oxirgi uchish sanasi')}</span><input id="form-to" type="date" value="${escapeHtml(form.departureDateTo)}" required></label>
-    </div>
-    <label class="form-label" for="form-price">${pick('Цена до, UZS', 'Narxgacha, UZS')}</label>
-    <input id="form-price" class="full-input" type="number" min="1" step="10000" inputmode="numeric" value="${escapeHtml(form.maxPrice)}" placeholder="${pick('Например, 1 700 000', 'Masalan, 1 700 000')}">
-    <div class="toggle-row"><span>${pick('Только прямые рейсы', 'Faqat to‘g‘ridan-to‘g‘ri reyslar')}</span><button class="switch ${form.directOnly ? 'active' : ''}" type="button" data-form-toggle="directOnly" aria-pressed="${form.directOnly}"></button></div>
-    <div class="toggle-row"><span>${pick('Нужен багаж', 'Bagaj kerak')}</span><button class="switch ${form.baggageRequired ? 'active' : ''}" type="button" data-form-toggle="baggageRequired" aria-pressed="${form.baggageRequired}"></button></div>
-    <div class="toggle-row last"><span>${pick('Туда-обратно', 'Borib-kelish')}</span><button class="switch ${form.roundTripOnly ? 'active' : ''}" type="button" data-form-toggle="roundTripOnly" aria-pressed="${form.roundTripOnly}"></button></div>
-    ${state.formError ? `<div class="form-error">${escapeHtml(state.formError)}</div>` : ''}
-    <button id="submit-watch" class="primary" type="button">${pick('Создать отслеживание', 'Kuzatuv yaratish')}</button>
-  </section>`;
-  document.querySelector('#close-create')?.addEventListener('click', () => {
-    state.screen = 'tabs';
-    if (state.view === 'watchlist') renderWatchlist();
-    else renderDeals();
-  });
-  document.querySelectorAll('[data-form-destination]').forEach((button) => button.addEventListener('click', () => {
-    form.destinationCode = button.dataset.formDestination;
-    renderCreate();
-  }));
-  document.querySelectorAll('[data-form-toggle]').forEach((button) => button.addEventListener('click', () => {
-    const key = button.dataset.formToggle;
-    form[key] = !form[key];
-    haptic();
-    renderCreate();
-  }));
-  document.querySelector('#form-from')?.addEventListener('input', (event) => { form.departureDateFrom = event.target.value; });
-  document.querySelector('#form-to')?.addEventListener('input', (event) => { form.departureDateTo = event.target.value; });
-  document.querySelector('#form-price')?.addEventListener('input', (event) => { form.maxPrice = event.target.value; });
-  document.querySelector('#submit-watch')?.addEventListener('click', submitWatch);
-}
-
-function openCreate(destinationCode, ticket = null) {
-  state.screen = 'create';
-  state.formError = '';
-  state.form = {
-    destinationCode,
-    departureDateFrom: ticket?.departureDate ?? todayInTashkent(),
-    departureDateTo: ticket?.returnDate ?? todayInTashkent(90),
-    maxPrice: '',
-    directOnly: ticket?.isDirect ?? false,
-    baggageRequired: ticket?.hasBaggage ?? false,
-    roundTripOnly: ticket?.returnDate !== null && ticket !== null
-  };
-  renderCreate();
-}
-
-async function submitWatch() {
-  const form = state.form;
-  state.formError = '';
-  if (!form.departureDateFrom || !form.departureDateTo) state.formError = pick('Укажите диапазон дат', 'Sana oralig‘ini kiriting');
-  else if (form.departureDateTo < form.departureDateFrom) state.formError = pick('Дата окончания раньше даты начала', 'Tugash sanasi boshlanish sanasidan oldin');
-  else if (form.maxPrice && Number(form.maxPrice) <= 0) state.formError = pick('Неверная цена', 'Narx noto‘g‘ri');
-  if (state.formError) {
-    renderCreate();
-    return;
-  }
-  try {
-    await api('/api/v1/subscriptions', {
-      method: 'POST',
-      body: JSON.stringify({
-        destinationCode: form.destinationCode || null,
-        departureDateFrom: form.departureDateFrom,
-        departureDateTo: form.departureDateTo,
-        maxPrice: form.maxPrice ? Number(form.maxPrice) : null,
-        directOnly: form.directOnly,
-        roundTripOnly: form.roundTripOnly,
-        baggageRequired: form.baggageRequired
-      })
-    });
-    haptic('medium');
-    showToast(pick('Отслеживание создано', 'Kuzatuv yaratildi'));
-    state.view = 'watchlist';
-    await loadWatchlist();
-  } catch (error) {
-    state.formError = error instanceof Error ? error.message : pick('Не удалось создать отслеживание', 'Kuzatuvni yaratib bo‘lmadi');
-    renderCreate();
-  }
+function openRoutePicker() {
+  sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Выберите направление</h2><p>Откуда: ${escapeHtml(originNames[state.profile.defaultOriginCode] ?? state.profile.defaultOriginCode)}</p></div><button id="close-sheet" class="icon-button sheet-close" type="button">${icon('x')}</button></div><div class="route-picker">${state.destinations.map((item) => `<button type="button" data-pick-route="${item.code}"><span><b>${escapeHtml(item.name)}</b><small>${state.profile.defaultOriginCode} → ${item.code}</small></span>${icon('plus')}</button>`).join('')}</div>`;
+  sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); document.querySelector('#close-sheet')?.addEventListener('click', closeSheet);
+  sheet.querySelectorAll('[data-pick-route]').forEach((button) => button.addEventListener('click', () => openTracking(null, button.dataset.pickRoute)));
 }
 
 function renderProfile() {
-  state.screen = 'tabs';
-  showTabs(true);
-  setActiveNav();
-  const user = state.profile;
-  const title = user.firstName ?? user.username ?? pick('Пользователь', 'Foydalanuvchi');
-  content.innerHTML = `<section class="screen">
-    <h1 style="margin-bottom:20px">${pick('Профиль', 'Profil')}</h1>
-    <div class="profile-person"><div class="avatar">${escapeHtml(title.slice(0, 1).toUpperCase())}</div><div><div class="profile-name">${escapeHtml(title)}</div><div class="profile-source">${pick('Telegram-аккаунт', 'Telegram hisobi')}</div></div></div>
-    <div class="panel settings-card"><div class="info-row"><span class="info-label">${pick('Город вылета', 'Uchish shahri')}</span><span class="info-value">${escapeHtml(originName(user.defaultOriginCode))}</span></div><div class="info-row"><span class="info-label">${pick('Валюта', 'Valyuta')}</span><span class="info-value">UZS</span></div></div>
-    <div class="section-label">${pick('Язык', 'Til')}</div>
-    <div class="segments"><button class="segment ${user.languageCode === 'uz' ? 'active' : ''}" type="button" data-profile-language="uz">🇺🇿 O‘zbekcha</button><button class="segment ${user.languageCode === 'ru' ? 'active' : ''}" type="button" data-profile-language="ru">🇷🇺 Русский</button></div>
-    <div class="section-label">${pick('Город вылета', 'Uchish shahri')}</div>
-    <div class="choice-list">${uzbekistanOrigins.map((code) => `<button class="choice ${user.defaultOriginCode === code ? 'active' : ''}" type="button" data-profile-origin="${code}">${escapeHtml(originName(code))}</button>`).join('')}</div>
-    <div class="section-label">${pick('Класс перелёта', 'Parvoz klassi')}</div>
-    <div class="segments"><button class="segment ${user.preferredTripClass === 'economy' ? 'active' : ''}" type="button" data-profile-class="economy">${pick('Эконом', 'Ekonom')}</button><button class="segment ${user.preferredTripClass === 'business' ? 'active' : ''}" type="button" data-profile-class="business">${pick('Бизнес', 'Biznes')}</button></div>
-    <div class="section-label">${pick('Багаж', 'Bagaj')}</div>
-    <div class="segments"><button class="segment ${!user.baggageRequired ? 'active' : ''}" type="button" data-profile-baggage="0">${pick('Не важно', 'Muhim emas')}</button><button class="segment ${user.baggageRequired ? 'active' : ''}" type="button" data-profile-baggage="1">${pick('Только с багажом', 'Faqat bagaj bilan')}</button></div>
-    <button id="save-profile" class="primary profile-save" type="button">${pick('Сохранить', 'Saqlash')}</button>
-  </section>`;
-  document.querySelectorAll('[data-profile-class]').forEach((button) => button.addEventListener('click', () => {
-    user.preferredTripClass = button.dataset.profileClass;
-    renderProfile();
-  }));
-  document.querySelectorAll('[data-profile-origin]').forEach((button) => button.addEventListener('click', () => {
-    user.defaultOriginCode = button.dataset.profileOrigin;
-    renderProfile();
-  }));
-  document.querySelectorAll('[data-profile-language]').forEach((button) => button.addEventListener('click', () => {
-    user.languageCode = button.dataset.profileLanguage;
-    renderProfile();
-  }));
-  document.querySelectorAll('[data-profile-baggage]').forEach((button) => button.addEventListener('click', () => {
-    user.baggageRequired = button.dataset.profileBaggage === '1';
-    renderProfile();
-  }));
-  document.querySelector('#save-profile')?.addEventListener('click', async () => {
-    try {
-      state.profile = await api('/api/v1/me', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          preferredTripClass: user.preferredTripClass,
-          baggageRequired: user.baggageRequired,
-          defaultOriginCode: user.defaultOriginCode,
-          languageCode: user.languageCode
-        })
-      });
-      haptic('medium');
-      if (state.profile.languageCode !== language) {
-        const nextUrl = new globalThis.URL(globalThis.location.href);
-        nextUrl.searchParams.set('lang', state.profile.languageCode);
-        globalThis.location.replace(nextUrl.toString());
-        return;
-      }
-      showToast(pick('Настройки сохранены', 'Sozlamalar saqlandi'));
-      renderProfile();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : pick('Не удалось сохранить', 'Saqlab bo‘lmadi'));
-    }
-  });
+  state.screen = 'tabs'; showTabs(true); setActiveNav(); const user = state.profile; const title = user.firstName ?? user.username ?? 'Пользователь'; const active = state.subscriptions.filter((item) => item.isActive).length;
+  const savings = user.trackedSavings?.amount ?? 0;
+  content.innerHTML = `<section class="screen profile-screen"><header><div class="brand">Профиль</div><h1>Настройки</h1></header><div class="profile-person"><div class="avatar">${escapeHtml(title.slice(0, 1).toUpperCase())}</div><div><div class="profile-name">${escapeHtml(title)}</div><div class="profile-source">${user.username ? `@${escapeHtml(user.username)}` : 'Telegram-аккаунт'}</div></div></div><div class="profile-stats"><span><b>${active}</b><small>активных</small></span><span><b>${formatPrice(savings)}</b><small>потенциальная экономия за 90 дней</small></span></div><div class="section-label">Настройки поиска</div><div class="settings-list"><button type="button" data-profile-sheet="origin"><span>Город вылета</span><b>${escapeHtml(originNames[user.defaultOriginCode] ?? user.defaultOriginCode)}</b></button><button type="button" data-profile-sheet="class"><span>Класс</span><b>${className(user.preferredTripClass)}</b></button><div class="toggle-row"><span><b>Багаж по умолчанию</b><small>Для новых отслеживаний</small></span><button class="switch ${user.baggageRequired ? 'active' : ''}" type="button" data-profile-toggle="baggageRequired"></button></div></div><div class="section-label">Уведомления</div><div class="settings-list"><div class="toggle-row"><span><b>Сразу о снижении</b><small>До 3 важных сообщений в день</small></span><button class="switch ${user.instantNotificationsEnabled ? 'active' : ''}" type="button" data-profile-toggle="instantNotificationsEnabled"></button></div><div class="toggle-row"><span><b>Утренний дайджест</b><small>Лучшие изменения за ночь</small></span><button class="switch ${user.morningDigestEnabled ? 'active' : ''}" type="button" data-profile-toggle="morningDigestEnabled"></button></div><div class="toggle-row"><span><b>Тихие часы</b><small>${minutesToTime(user.quietStartMinute)} — ${minutesToTime(user.quietEndMinute)}</small></span><button class="switch ${user.quietHoursEnabled ? 'active' : ''}" type="button" data-profile-toggle="quietHoursEnabled"></button></div><button type="button" data-profile-sheet="quiet"><span>Период тишины</span><b>${minutesToTime(user.quietStartMinute)} — ${minutesToTime(user.quietEndMinute)}</b></button></div><button id="share-app" class="share-card" type="button"><span class="cta-icon">${icon('arrow-up-right')}</span><span><b>Поделиться с друзьями</b><small>${user.referralCount ?? 0} приглашено · отправить в Telegram</small></span></button><div class="section-label">Язык</div><div class="segments"><button class="segment ${user.languageCode === 'ru' ? 'active' : ''}" type="button" data-profile-language="ru">Русский</button><button class="segment ${user.languageCode === 'uz' ? 'active' : ''}" type="button" data-profile-language="uz">O‘zbekcha</button></div><p class="autosave-copy">Изменения сохраняются автоматически</p></section>`;
+  document.querySelectorAll('[data-profile-toggle]').forEach((button) => button.addEventListener('click', () => void saveProfileField(button.dataset.profileToggle, !user[button.dataset.profileToggle])));
+  document.querySelectorAll('[data-profile-language]').forEach((button) => button.addEventListener('click', () => void saveProfileField('languageCode', button.dataset.profileLanguage)));
+  document.querySelectorAll('[data-profile-sheet]').forEach((button) => button.addEventListener('click', () => openProfileSheet(button.dataset.profileSheet)));
+  document.querySelector('#share-app')?.addEventListener('click', () => shareText('Hot Ticket следит за маршрутами и находит выгодные авиабилеты.', user.referralShareUrl ?? `${globalThis.location.origin}/app/`));
 }
-
-async function loadProfile() {
-  loadingScreen();
-  try {
-    state.profile = await api('/api/v1/me');
-    renderProfile();
-  } catch (error) {
-    errorScreen(error, loadProfile);
-  }
+async function saveProfileField(key, value) {
+  const previous = state.profile[key]; state.profile[key] = value; renderProfile();
+  try { state.profile = await api('/api/v1/me', { method: 'PATCH', body: JSON.stringify({ [key]: value }) }); haptic(); showToast('Сохранено'); }
+  catch (error) { state.profile[key] = previous; renderProfile(); showToast(error instanceof Error ? error.message : 'Не удалось сохранить'); }
 }
-
-function renderOnboarding(selectedLanguage = null) {
-  showTabs(false);
-  state.screen = 'onboarding';
-  if (selectedLanguage === null) {
-    content.innerHTML = `<section class="screen without-tabs">
-      <div class="eyebrow">HOT TICKET</div>
-      <h1>Tilni tanlang</h1>
-      <div class="subtitle" style="margin-bottom:24px">Выберите язык</div>
-      <div class="choice-list">
-        <button class="choice" type="button" data-onboarding-language="uz">🇺🇿 O‘zbekcha</button>
-        <button class="choice" type="button" data-onboarding-language="ru">🇷🇺 Русский</button>
-      </div>
-    </section>`;
-    document.querySelectorAll('[data-onboarding-language]').forEach((button) => {
-      button.addEventListener('click', () => renderOnboarding(button.dataset.onboardingLanguage));
-    });
-    return;
-  }
-
-  const uz = selectedLanguage === 'uz';
-  content.innerHTML = `<section class="screen without-tabs">
-    <div class="back-row"><button id="onboarding-back" class="back-button" type="button" aria-label="${uz ? 'Orqaga' : 'Назад'}">${icon('chevron-left')}</button></div>
-    <div class="eyebrow">HOT TICKET</div>
-    <h1>${uz ? 'Uchish shahrini tanlang' : 'Выберите город вылета'}</h1>
-    <div class="subtitle" style="margin-bottom:20px">${uz ? 'Faqat O‘zbekiston shaharlari' : 'Только города Узбекистана'}</div>
-    <div class="choice-list">${uzbekistanOrigins.map((code) => (
-      `<button class="choice" type="button" data-onboarding-origin="${code}">${escapeHtml(originName(code, selectedLanguage))} (${code})</button>`
-    )).join('')}</div>
-  </section>`;
-  document.querySelector('#onboarding-back')?.addEventListener('click', () => renderOnboarding());
-  document.querySelectorAll('[data-onboarding-origin]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      try {
-        state.profile = await api('/api/v1/onboarding', {
-          method: 'POST',
-          body: JSON.stringify({
-            languageCode: selectedLanguage,
-            defaultOriginCode: button.dataset.onboardingOrigin
-          })
-        });
-        haptic('medium');
-        const nextUrl = new globalThis.URL(globalThis.location.href);
-        nextUrl.searchParams.set('lang', selectedLanguage);
-        globalThis.location.replace(nextUrl.toString());
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : (uz ? 'Tanlovni saqlab bo‘lmadi' : 'Не удалось сохранить выбор'));
-      }
-    });
-  });
+function openProfileSheet(kind) {
+  if (kind === 'origin') sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Город вылета</h2><p>Используется для новых маршрутов</p></div><button id="close-sheet" class="icon-button sheet-close" type="button">${icon('x')}</button></div><div class="route-picker">${Object.entries(originNames).map(([code, name]) => `<button type="button" data-profile-value="${code}"><span><b>${name}</b><small>${code}</small></span>${state.profile.defaultOriginCode === code ? icon('check') : ''}</button>`).join('')}</div>`;
+  else if (kind === 'class') sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Класс по умолчанию</h2><p>Для новых отслеживаний</p></div><button id="close-sheet" class="icon-button sheet-close" type="button">${icon('x')}</button></div><div class="route-picker"><button type="button" data-profile-value="economy"><span><b>Эконом</b><small>Больше доступных билетов</small></span></button><button type="button" data-profile-value="business"><span><b>Бизнес</b><small>Повышенный комфорт</small></span></button></div>`;
+  else sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Тихие часы</h2><p>Сообщения подождут до окончания периода</p></div><button id="close-sheet" class="icon-button sheet-close" type="button">${icon('x')}</button></div><div class="form-grid"><label><span class="form-label">С</span><input id="quiet-start" type="time" value="${minutesToTime(state.profile.quietStartMinute)}"></label><label><span class="form-label">До</span><input id="quiet-end" type="time" value="${minutesToTime(state.profile.quietEndMinute)}"></label></div><button id="save-quiet" class="primary" type="button">Сохранить период</button>`;
+  sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); document.querySelector('#close-sheet')?.addEventListener('click', closeSheet);
+  sheet.querySelectorAll('[data-profile-value]').forEach((button) => button.addEventListener('click', async () => { await saveProfileField(kind === 'origin' ? 'defaultOriginCode' : 'preferredTripClass', button.dataset.profileValue); closeSheet(); }));
+  document.querySelector('#save-quiet')?.addEventListener('click', async () => { const start = timeToMinutes(document.querySelector('#quiet-start').value); const end = timeToMinutes(document.querySelector('#quiet-end').value); try { state.profile = await api('/api/v1/me', { method: 'PATCH', body: JSON.stringify({ quietStartMinute: start, quietEndMinute: end }) }); closeSheet(); renderProfile(); showToast('Период сохранён'); } catch (error) { showToast(error.message); } });
+}
+function shareText(text, url) {
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  if (telegram?.openTelegramLink) telegram.openTelegramLink(shareUrl); else globalThis.open(shareUrl, '_blank', 'noopener');
 }
 
 async function bootstrap() {
-  loadingScreen();
+  loading();
   try {
-    state.profile = await api('/api/v1/me');
-    if (!state.profile.onboardingCompleted) {
-      renderOnboarding();
-      return;
-    }
-    if (
-      requestedLanguage === null
-      && ['ru', 'uz'].includes(state.profile.languageCode)
-      && state.profile.languageCode !== language
-    ) {
-      const nextUrl = new globalThis.URL(globalThis.location.href);
-      nextUrl.searchParams.set('lang', state.profile.languageCode);
-      globalThis.location.replace(nextUrl.toString());
-      return;
-    }
-    await loadCurrentView();
-  } catch (error) {
-    errorScreen(error, bootstrap);
-  }
+    const [profile, deals, destinations, subscriptions] = await Promise.all([api('/api/v1/me'), api('/api/v1/deals?sort=best&limit=50'), api('/api/v1/destinations'), api('/api/v1/subscriptions')]);
+    state.profile = profile; state.deals = deals.items; state.destinations = destinations.items; state.subscriptions = subscriptions.items.filter((item) => item.isActive); renderHome();
+  } catch (error) { errorScreen(error, bootstrap); }
 }
+async function loadView() { setActiveNav(); if (state.view === 'watchlist') renderWatchlist(); else if (state.view === 'profile') renderProfile(); else renderHome(); }
 
-async function loadCurrentView() {
-  setActiveNav();
-  if (state.view === 'watchlist') await loadWatchlist();
-  else if (state.view === 'profile') await loadProfile();
-  else await loadDeals();
-}
-
-document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => {
-  state.view = button.dataset.view;
-  state.screen = 'tabs';
-  haptic();
-  void loadCurrentView();
-}));
-sheetBackdrop?.addEventListener('click', closeFilterSheet);
-
-const navLabels = {
-  deals: pick('Deals', 'Chiptalar'),
-  watchlist: pick('Watchlist', 'Kuzatuvlar'),
-  profile: pick('Профиль', 'Profil')
-};
-document.querySelectorAll('[data-view]').forEach((button) => {
-  const label = button.querySelector('span:last-child');
-  if (label) label.textContent = navLabels[button.dataset.view] ?? label.textContent;
-});
-bottomNav?.setAttribute('aria-label', pick('Основная навигация', 'Asosiy navigatsiya'));
-content?.querySelector('.screen-loader')?.setAttribute('aria-label', pick('Загрузка', 'Yuklanmoqda'));
-
-if (!demoMode && !telegram?.initData) {
-  showTabs(false);
-  content.innerHTML = `<section class="screen locked-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">${pick('Откройте Hot Ticket из Telegram', 'Hot Ticket’ni Telegram orqali oching')}</div><div class="state-copy">${pick('Mini App использует Telegram для безопасного входа и доступа к вашим отслеживаниям.', 'Mini App xavfsiz kirish va kuzatuvlaringizga ruxsat olish uchun Telegram’dan foydalanadi.')}</div></section>`;
-} else {
-  applyTelegramChrome();
-  telegram?.ready();
-  telegram?.expand();
-  void bootstrap();
-}
+document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; state.screen = 'tabs'; haptic(); void loadView(); }));
+backdrop.addEventListener('click', closeSheet); telegram?.BackButton?.onClick?.(() => { if (!sheet.classList.contains('hidden')) closeSheet(); else backToTabs(); });
+if (!demoMode && !telegram?.initData) { showTabs(false); content.innerHTML = `<section class="screen locked-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">Откройте Hot Ticket из Telegram</div><div class="state-copy">Mini App использует Telegram для безопасного входа.</div></section>`; }
+else { applyTelegramChrome(); telegram?.ready(); telegram?.expand(); void bootstrap(); }

@@ -114,6 +114,7 @@ function createFixture(): {
     directOnly: false,
     roundTripOnly: false,
     baggageRequired: false,
+    tripClass: 'economy',
     isActive: true
   });
   store.setSyncSources([source]);
@@ -152,6 +153,43 @@ describe('SyncTicketsService', () => {
     expect(fixture.notifier.sent.map((item) => item.type)).toEqual(['new_ticket']);
     expect(fixture.store.notificationRecords).toHaveLength(1);
     expect(fixture.store.syncRunRecords.at(-1)?.status).toBe('success');
+  });
+
+  it('учитывает мгновенные уведомления, тихие часы и лимит 3 сообщения в день', async () => {
+    const disabled = createFixture();
+    const disabledUser = await disabled.store.findByTelegramUserId(100);
+    await disabled.store.updateNotificationPreferences(disabledUser?.id ?? 0, {
+      instantNotificationsEnabled: false,
+      morningDigestEnabled: false,
+      quietHoursEnabled: false,
+      quietStartMinute: 1380,
+      quietEndMinute: 480
+    }, disabled.clock.now());
+    disabled.provider.tickets.set('TAS|UZS', [createTicket()]);
+    await disabled.service.execute(source);
+    expect(disabled.notifier.sent).toHaveLength(0);
+
+    const limited = createFixture();
+    limited.provider.tickets.set('TAS|UZS', Array.from({ length: 4 }, (_, index) => ({
+      ...createTicket(1_850_000 - index * 10_000),
+      externalKey: `ticket-${index}`,
+      ticketLink: `https://www.aviasales.uz/search/TAS1509IST${index + 1}`
+    })));
+    await limited.service.execute(source);
+    expect(limited.notifier.sent).toHaveLength(3);
+
+    const quiet = createFixture();
+    const quietUser = await quiet.store.findByTelegramUserId(100);
+    await quiet.store.updateNotificationPreferences(quietUser?.id ?? 0, {
+      instantNotificationsEnabled: true,
+      morningDigestEnabled: false,
+      quietHoursEnabled: true,
+      quietStartMinute: 1000,
+      quietEndMinute: 1100
+    }, quiet.clock.now());
+    quiet.provider.tickets.set('TAS|UZS', [createTicket()]);
+    await quiet.service.execute(source);
+    expect(quiet.notifier.sent).toHaveLength(0);
   });
 
   it('обновляет кэш направлений для всех вариантов фильтров', async () => {
@@ -274,7 +312,7 @@ describe('SyncTicketsService', () => {
     expect(fixture.notifier.sent).toHaveLength(0);
   });
 
-  it('не уведомляет о билете другого класса', async () => {
+  it('не меняет класс существующей подписки при изменении профиля', async () => {
     const fixture = createFixture();
     const user = await fixture.store.findByTelegramUserId(100);
     await fixture.store.updateTicketPreferences(user?.id ?? 0, 'business', false, fixture.clock.now());
@@ -282,11 +320,11 @@ describe('SyncTicketsService', () => {
 
     await fixture.service.execute(source);
 
-    expect(fixture.notifier.sent).toHaveLength(0);
-    expect(fixture.store.notificationRecords).toHaveLength(0);
+    expect(fixture.notifier.sent).toHaveLength(1);
+    expect(fixture.store.notificationRecords).toHaveLength(1);
   });
 
-  it('применяет актуальное требование багажа владельца', async () => {
+  it('хранит класс и багаж на уровне подписки, а не профиля', async () => {
     const withoutBaggage = createFixture();
     const firstUser = await withoutBaggage.store.findByTelegramUserId(100);
     await withoutBaggage.store.updateTicketPreferences(
@@ -317,7 +355,7 @@ describe('SyncTicketsService', () => {
       hasBaggage: true
     }]);
     await withBaggage.service.execute(source);
-    expect(withBaggage.notifier.sent).toHaveLength(1);
+    expect(withBaggage.notifier.sent).toHaveLength(0);
   });
 
   it('сразу деактивирует билет, отсутствующий в успешном response', async () => {

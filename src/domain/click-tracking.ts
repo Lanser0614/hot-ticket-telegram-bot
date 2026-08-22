@@ -3,6 +3,7 @@ import { ValidationError } from './errors.js';
 export const CLICK_SOURCES = [
   'bot_search',
   'bot_notification',
+  'bot_share',
   'miniapp_deals',
   'miniapp_card',
   'miniapp_watchlist'

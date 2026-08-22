@@ -42,6 +42,10 @@ export class UserService {
     return this.findRequired(assertTelegramId(telegramUserId));
   }
 
+  public findByTelegramUserId(telegramUserId: number): Promise<User | null> {
+    return this.users.findByTelegramUserId(assertTelegramId(telegramUserId));
+  }
+
   private async findRequired(telegramUserId: number): Promise<User> {
     const user = await this.users.findByTelegramUserId(telegramUserId);
     if (user === null) throw new ValidationError('Сначала выполните /start');

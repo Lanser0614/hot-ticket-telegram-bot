@@ -3,8 +3,10 @@ import type {
   ClickRepository,
   LockRepository,
   NotificationHistoryRepository,
+  NotificationQueueRepository,
   PriceHistoryRepository,
   RoutePriceRepository,
+  ReferralRepository,
   SessionRepository,
   SubscriptionRepository,
   SyncRunRepository,
@@ -14,6 +16,7 @@ import type {
 } from '../../application/ports.js';
 import type {
   DestinationQuery,
+  NotificationQueueItem,
   StoredTicket,
   SyncResult,
   SyncSource,
@@ -111,6 +114,11 @@ function mapUser(row: Row): User {
     preferredCurrencyCode: requiredString(row, 'preferred_currency_code'),
     preferredTripClass: tripClass(row, 'preferred_trip_class'),
     baggageRequired: bool(row, 'baggage_required'),
+    instantNotificationsEnabled: bool(row, 'instant_notifications_enabled'),
+    morningDigestEnabled: bool(row, 'morning_digest_enabled'),
+    quietHoursEnabled: bool(row, 'quiet_hours_enabled'),
+    quietStartMinute: requiredNumber(row, 'quiet_start_minute'),
+    quietEndMinute: requiredNumber(row, 'quiet_end_minute'),
     onboardingCompleted: bool(row, 'onboarding_completed'),
     isActive: bool(row, 'is_active'),
     createdAt: timestamp(row, 'created_at'),
@@ -159,6 +167,7 @@ function mapSubscription(row: Row): Subscription {
     directOnly: bool(row, 'direct_only'),
     roundTripOnly: bool(row, 'round_trip_only'),
     baggageRequired: bool(row, 'baggage_required'),
+    tripClass: tripClass(row, 'trip_class'),
     isActive: bool(row, 'is_active')
   };
 }
@@ -188,6 +197,34 @@ function mapSyncSource(row: Row): SyncSource {
   };
 }
 
+function mapNotificationQueueItem(row: Row): NotificationQueueItem {
+  const notificationType = requiredString(row, 'notification_type');
+  if (notificationType !== 'new_ticket' && notificationType !== 'price_drop') {
+    throw new TypeError('База вернула некорректный тип уведомления');
+  }
+  const status = requiredString(row, 'status');
+  if (status !== 'pending' && status !== 'sent' && status !== 'discarded' && status !== 'failed') {
+    throw new TypeError('База вернула некорректный статус очереди');
+  }
+  const deliveryMode = requiredString(row, 'delivery_mode');
+  if (deliveryMode !== 'instant_or_digest' && deliveryMode !== 'digest_only') {
+    throw new TypeError('База вернула некорректный режим доставки');
+  }
+  return {
+    id: requiredNumber(row, 'id'),
+    userId: requiredNumber(row, 'user_id'),
+    subscriptionId: requiredNumber(row, 'subscription_id'),
+    ticketId: requiredNumber(row, 'ticket_id'),
+    ticketPrice: requiredNumber(row, 'ticket_price'),
+    notificationType,
+    deliveryMode,
+    status,
+    attemptCount: requiredNumber(row, 'attempt_count'),
+    nextAttemptAt: timestamp(row, 'next_attempt_at'),
+    queuedAt: timestamp(row, 'queued_at')
+  };
+}
+
 export class ApplicationRepositories implements
   UserRepository,
   TicketRepository,
@@ -197,6 +234,8 @@ export class ApplicationRepositories implements
   SubscriptionRepository,
   SessionRepository,
   NotificationHistoryRepository,
+  NotificationQueueRepository,
+  ReferralRepository,
   SyncSourceRepository,
   SyncRunRepository,
   LockRepository {
@@ -316,6 +355,34 @@ export class ApplicationRepositories implements
     `, {
       ':tripClass': preferredTripClass,
       ':baggageRequired': baggageRequired ? 1 : 0,
+      ':now': seconds(now),
+      ':id': userId
+    });
+  }
+
+  public async updateNotificationPreferences(
+    userId: number,
+    input: {
+      instantNotificationsEnabled: boolean;
+      morningDigestEnabled: boolean;
+      quietHoursEnabled: boolean;
+      quietStartMinute: number;
+      quietEndMinute: number;
+    },
+    now: Date
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE users SET instant_notifications_enabled = :instant,
+        morning_digest_enabled = :digest, quiet_hours_enabled = :quiet,
+        quiet_start_minute = :quietStart, quiet_end_minute = :quietEnd,
+        updated_at = :now
+      WHERE id = :id
+    `, {
+      ':instant': input.instantNotificationsEnabled ? 1 : 0,
+      ':digest': input.morningDigestEnabled ? 1 : 0,
+      ':quiet': input.quietHoursEnabled ? 1 : 0,
+      ':quietStart': input.quietStartMinute,
+      ':quietEnd': input.quietEndMinute,
       ':now': seconds(now),
       ':id': userId
     });
@@ -668,16 +735,20 @@ export class ApplicationRepositories implements
   public async hasRecentClick(
     userId: number,
     ticketId: number,
-    since: Date
+    since: Date,
+    context?: { source: ClickSource; subscriptionId: number | null }
   ): Promise<boolean> {
     return await this.db.get(`
       SELECT 1 AS found FROM link_clicks
       WHERE user_id = :userId AND ticket_id = :ticketId AND clicked_at >= :since
+        ${context === undefined ? '' : 'AND source = :source AND subscription_id IS :subscriptionId'}
       LIMIT 1
     `, {
       ':userId': userId,
       ':ticketId': ticketId,
-      ':since': seconds(since)
+      ':since': seconds(since),
+      ':source': context?.source ?? null,
+      ':subscriptionId': context?.subscriptionId ?? null
     }) !== null;
   }
 
@@ -687,17 +758,19 @@ export class ApplicationRepositories implements
     source: ClickSource;
     subscriptionId: number | null;
     userAgentKind: UserAgentKind;
+    benchmarkPrice?: number | null;
+    estimatedSavings?: number | null;
     clickedAt: Date;
   }): Promise<number> {
     const row = await this.db.get(`
       INSERT INTO link_clicks (
         ticket_id, user_id, source, origin_code, destination_code,
         departure_date, price, currency_code, subscription_id,
-        user_agent_kind, clicked_at
+        benchmark_price, estimated_savings, user_agent_kind, clicked_at
       ) VALUES (
         :ticketId, :userId, :source, :origin, :destination,
         :departureDate, :price, :currency, :subscriptionId,
-        :userAgentKind, :clickedAt
+        :benchmarkPrice, :estimatedSavings, :userAgentKind, :clickedAt
       ) RETURNING id
     `, {
       ':ticketId': input.ticket.id,
@@ -709,11 +782,39 @@ export class ApplicationRepositories implements
       ':price': input.ticket.price,
       ':currency': input.ticket.currencyCode,
       ':subscriptionId': input.subscriptionId,
+      ':benchmarkPrice': input.benchmarkPrice ?? null,
+      ':estimatedSavings': input.estimatedSavings ?? null,
       ':userAgentKind': input.userAgentKind,
       ':clickedAt': seconds(input.clickedAt)
     });
     if (row === null) throw new Error('Не удалось записать переход');
     return requiredNumber(row, 'id');
+  }
+
+  public async getTrackedSavings(
+    userId: number,
+    currencyCode: string,
+    since: Date
+  ): Promise<number> {
+    const row = await this.db.get(`
+      SELECT COALESCE(SUM(best_savings), 0) AS amount
+      FROM (
+        SELECT ticket_id, MAX(estimated_savings) AS best_savings
+        FROM link_clicks
+        WHERE user_id = :userId
+          AND currency_code = :currency
+          AND user_agent_kind = 'human'
+          AND source IN ('bot_notification', 'miniapp_watchlist')
+          AND estimated_savings > 0
+          AND clicked_at >= :since
+        GROUP BY ticket_id
+      )
+    `, {
+      ':userId': userId,
+      ':currency': currencyCode,
+      ':since': seconds(since)
+    });
+    return row === null ? 0 : requiredNumber(row, 'amount');
   }
 
   public async findMatching(ticket: Ticket): Promise<readonly Subscription[]> {
@@ -725,6 +826,8 @@ export class ApplicationRepositories implements
         AND (max_price IS NULL OR max_price >= :price)
         AND (direct_only = 0 OR :isDirect = 1)
         AND (round_trip_only = 0 OR :hasReturn = 1)
+        AND (baggage_required = 0 OR :hasBaggage = 1)
+        AND trip_class = :tripClass
     `, {
       ':origin': ticket.originCode,
       ':currency': ticket.currencyCode,
@@ -732,9 +835,19 @@ export class ApplicationRepositories implements
       ':departureDate': ticket.departureDate,
       ':price': ticket.price,
       ':isDirect': ticket.isDirect ? 1 : 0,
-      ':hasReturn': ticket.returnDate !== null ? 1 : 0
+      ':hasReturn': ticket.returnDate !== null ? 1 : 0,
+      ':hasBaggage': ticket.hasBaggage ? 1 : 0,
+      ':tripClass': ticket.tripClass
     });
     return rows.map(mapSubscription);
+  }
+
+  public async findSubscriptionById(subscriptionId: number): Promise<Subscription | null> {
+    const row = await this.db.get(
+      'SELECT * FROM subscriptions WHERE id = :id',
+      { ':id': subscriptionId }
+    );
+    return row === null ? null : mapSubscription(row);
   }
 
   public async listByUser(userId: number): Promise<readonly Subscription[]> {
@@ -759,11 +872,11 @@ export class ApplicationRepositories implements
     const row = await this.db.get(`
       INSERT INTO subscriptions (
         user_id, origin_code, destination_code, currency_code, departure_date_from,
-        departure_date_to, max_price, direct_only, round_trip_only, baggage_required, is_active,
+        departure_date_to, max_price, direct_only, round_trip_only, baggage_required, trip_class, is_active,
         created_at, updated_at
       ) VALUES (
         :userId, :origin, :destination, :currency, :dateFrom,
-        :dateTo, :maxPrice, :directOnly, :roundTripOnly, :baggageRequired, 1, :now, :now
+        :dateTo, :maxPrice, :directOnly, :roundTripOnly, :baggageRequired, :tripClass, 1, :now, :now
       ) RETURNING *
     `, {
       ':userId': input.userId,
@@ -776,10 +889,41 @@ export class ApplicationRepositories implements
       ':directOnly': input.directOnly ? 1 : 0,
       ':roundTripOnly': input.roundTripOnly ? 1 : 0,
       ':baggageRequired': input.baggageRequired ? 1 : 0,
+      ':tripClass': input.tripClass,
       ':now': seconds(now)
     });
     if (row === null) throw new Error('Не удалось создать подписку');
     return mapSubscription(row);
+  }
+
+  public async updateOwned(
+    userId: number,
+    subscriptionId: number,
+    input: Omit<Subscription, 'id' | 'userId' | 'originCode' | 'currencyCode' | 'isActive'>,
+    now: Date
+  ): Promise<Subscription | null> {
+    const row = await this.db.get(`
+      UPDATE subscriptions SET destination_code = :destination,
+        departure_date_from = :dateFrom, departure_date_to = :dateTo,
+        max_price = :maxPrice, direct_only = :directOnly,
+        round_trip_only = :roundTripOnly, baggage_required = :baggageRequired,
+        trip_class = :tripClass, updated_at = :now
+      WHERE id = :id AND user_id = :userId AND is_active = 1
+      RETURNING *
+    `, {
+      ':destination': input.destinationCode,
+      ':dateFrom': input.departureDateFrom,
+      ':dateTo': input.departureDateTo,
+      ':maxPrice': input.maxPrice,
+      ':directOnly': input.directOnly ? 1 : 0,
+      ':roundTripOnly': input.roundTripOnly ? 1 : 0,
+      ':baggageRequired': input.baggageRequired ? 1 : 0,
+      ':tripClass': input.tripClass,
+      ':now': seconds(now),
+      ':id': subscriptionId,
+      ':userId': userId
+    });
+    return row === null ? null : mapSubscription(row);
   }
 
   public async deactivateOwned(userId: number, subscriptionId: number, now: Date): Promise<boolean> {
@@ -836,21 +980,30 @@ export class ApplicationRepositories implements
     }) !== null;
   }
 
+  public async countSentSince(userId: number, since: Date): Promise<number> {
+    const row = await this.db.get(`
+      SELECT count(*) AS count FROM notification_history
+      WHERE user_id = :userId AND delivery_kind = 'instant' AND sent_at >= :since
+    `, { ':userId': userId, ':since': seconds(since) });
+    return row === null ? 0 : requiredNumber(row, 'count');
+  }
+
   public async addNotification(input: {
     userId: number;
     subscriptionId: number;
     ticketId: number;
     notifiedPrice: number;
     notificationType: TicketEventType;
+    deliveryKind?: 'instant' | 'digest';
     telegramMessageId: number;
     sentAt: Date;
   }): Promise<void> {
     await this.db.run(`
       INSERT INTO notification_history (
         user_id, subscription_id, ticket_id, notified_price,
-        notification_type, telegram_message_id, sent_at
+        notification_type, delivery_kind, telegram_message_id, sent_at
       ) VALUES (
-        :userId, :subscriptionId, :ticketId, :price, :type, :messageId, :sentAt
+        :userId, :subscriptionId, :ticketId, :price, :type, :deliveryKind, :messageId, :sentAt
       ) ON CONFLICT(user_id, subscription_id, ticket_id, notified_price) DO NOTHING
     `, {
       ':userId': input.userId,
@@ -858,9 +1011,224 @@ export class ApplicationRepositories implements
       ':ticketId': input.ticketId,
       ':price': input.notifiedPrice,
       ':type': input.notificationType,
+      ':deliveryKind': input.deliveryKind ?? 'instant',
       ':messageId': input.telegramMessageId,
       ':sentAt': seconds(input.sentAt)
     });
+  }
+
+  public async enqueue(input: {
+    userId: number;
+    subscriptionId: number;
+    ticketId: number;
+    ticketPrice: number;
+    notificationType: TicketEventType;
+    queuedAt: Date;
+  }): Promise<void> {
+    await this.db.run(`
+      INSERT INTO notification_queue (
+        user_id, subscription_id, ticket_id, ticket_price,
+        notification_type, next_attempt_at, queued_at
+      ) VALUES (
+        :userId, :subscriptionId, :ticketId, :ticketPrice,
+        :notificationType, :queuedAt, :queuedAt
+      ) ON CONFLICT(
+        user_id, subscription_id, ticket_id, ticket_price, notification_type
+      ) DO NOTHING
+    `, {
+      ':userId': input.userId,
+      ':subscriptionId': input.subscriptionId,
+      ':ticketId': input.ticketId,
+      ':ticketPrice': input.ticketPrice,
+      ':notificationType': input.notificationType,
+      ':queuedAt': seconds(input.queuedAt)
+    });
+  }
+
+  public async listDue(now: Date, limit: number): Promise<readonly NotificationQueueItem[]> {
+    const rows = await this.db.all(`
+      SELECT * FROM notification_queue
+      WHERE status = 'pending' AND next_attempt_at <= :now
+      ORDER BY queued_at ASC, ticket_price ASC, id ASC
+      LIMIT :limit
+    `, { ':now': seconds(now), ':limit': limit });
+    return rows.map(mapNotificationQueueItem);
+  }
+
+  public async discardPendingForSubscriptionExcept(
+    userId: number,
+    subscriptionId: number,
+    keepQueueId: number
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE notification_queue
+      SET status = 'discarded', last_error = 'superseded'
+      WHERE user_id = :userId AND subscription_id = :subscriptionId
+        AND status = 'pending' AND id <> :keepQueueId
+    `, {
+      ':userId': userId,
+      ':subscriptionId': subscriptionId,
+      ':keepQueueId': keepQueueId
+    });
+  }
+
+  public async markSent(queueId: number, telegramMessageId: number, sentAt: Date): Promise<void> {
+    await this.db.run(`
+      UPDATE notification_queue
+      SET status = 'sent', telegram_message_id = :messageId,
+        sent_at = :sentAt, last_error = NULL
+      WHERE id = :id AND status = 'pending'
+    `, {
+      ':id': queueId,
+      ':messageId': telegramMessageId,
+      ':sentAt': seconds(sentAt)
+    });
+  }
+
+  public async markDiscarded(queueId: number, reason: string): Promise<void> {
+    await this.db.run(`
+      UPDATE notification_queue SET status = 'discarded', last_error = :reason
+      WHERE id = :id AND status = 'pending'
+    `, { ':id': queueId, ':reason': reason.slice(0, 500) });
+  }
+
+  public async markDigestOnly(queueId: number): Promise<void> {
+    await this.db.run(`
+      UPDATE notification_queue SET delivery_mode = 'digest_only'
+      WHERE id = :id AND status = 'pending'
+    `, { ':id': queueId });
+  }
+
+  public async markRetry(
+    queueId: number,
+    errorMessage: string,
+    nextAttemptAt: Date,
+    terminal: boolean
+  ): Promise<void> {
+    await this.db.run(`
+      UPDATE notification_queue
+      SET status = :status, attempt_count = attempt_count + 1,
+        next_attempt_at = :nextAttemptAt, last_error = :error
+      WHERE id = :id AND status = 'pending'
+    `, {
+      ':id': queueId,
+      ':status': terminal ? 'failed' : 'pending',
+      ':nextAttemptAt': seconds(nextAttemptAt),
+      ':error': errorMessage.slice(0, 500)
+    });
+  }
+
+  public async hasDigestDelivery(userId: number, localDay: string): Promise<boolean> {
+    return await this.db.get(`
+      SELECT 1 AS found FROM digest_deliveries
+      WHERE user_id = :userId AND local_day = :localDay
+    `, { ':userId': userId, ':localDay': localDay }) !== null;
+  }
+
+  public async addDigestDelivery(
+    userId: number,
+    localDay: string,
+    telegramMessageId: number,
+    sentAt: Date
+  ): Promise<void> {
+    await this.db.run(`
+      INSERT INTO digest_deliveries (
+        user_id, local_day, telegram_message_id, sent_at
+      ) VALUES (:userId, :localDay, :messageId, :sentAt)
+      ON CONFLICT(user_id, local_day) DO NOTHING
+    `, {
+      ':userId': userId,
+      ':localDay': localDay,
+      ':messageId': telegramMessageId,
+      ':sentAt': seconds(sentAt)
+    });
+  }
+
+  public async findCodeByUserId(userId: number): Promise<string | null> {
+    const row = await this.db.get(
+      'SELECT code FROM referral_codes WHERE user_id = :userId',
+      { ':userId': userId }
+    );
+    return row === null ? null : requiredString(row, 'code');
+  }
+
+  public async findUserIdByCode(code: string): Promise<number | null> {
+    const row = await this.db.get(
+      'SELECT user_id FROM referral_codes WHERE code = :code',
+      { ':code': code }
+    );
+    return row === null ? null : requiredNumber(row, 'user_id');
+  }
+
+  public async createCode(userId: number, code: string, createdAt: Date): Promise<boolean> {
+    const rows = await this.db.all(`
+      INSERT INTO referral_codes (user_id, code, created_at)
+      VALUES (:userId, :code, :createdAt)
+      ON CONFLICT DO NOTHING
+      RETURNING user_id
+    `, { ':userId': userId, ':code': code, ':createdAt': seconds(createdAt) });
+    return rows.length === 1;
+  }
+
+  public async attribute(input: {
+    referredUserId: number;
+    referrerUserId: number;
+    referralCode: string;
+    sharedTicketId: number | null;
+    attributedAt: Date;
+  }): Promise<boolean> {
+    if (input.referredUserId === input.referrerUserId) return false;
+    const rows = await this.db.all(`
+      INSERT INTO referrals (
+        referred_user_id, referrer_user_id, referral_code,
+        shared_ticket_id, attributed_at
+      ) VALUES (
+        :referredUserId, :referrerUserId, :referralCode,
+        :sharedTicketId, :attributedAt
+      ) ON CONFLICT(referred_user_id) DO NOTHING
+      RETURNING referred_user_id
+    `, {
+      ':referredUserId': input.referredUserId,
+      ':referrerUserId': input.referrerUserId,
+      ':referralCode': input.referralCode,
+      ':sharedTicketId': input.sharedTicketId,
+      ':attributedAt': seconds(input.attributedAt)
+    });
+    return rows.length === 1;
+  }
+
+  public async countReferrals(userId: number): Promise<number> {
+    const row = await this.db.get(
+      'SELECT count(*) AS count FROM referrals WHERE referrer_user_id = :userId',
+      { ':userId': userId }
+    );
+    return row === null ? 0 : requiredNumber(row, 'count');
+  }
+
+  public async savePendingSharedTicket(
+    userId: number,
+    ticketId: number,
+    createdAt: Date
+  ): Promise<void> {
+    await this.db.run(`
+      INSERT INTO pending_shared_tickets (user_id, ticket_id, created_at)
+      VALUES (:userId, :ticketId, :createdAt)
+      ON CONFLICT(user_id) DO UPDATE SET
+        ticket_id = excluded.ticket_id, created_at = excluded.created_at
+    `, { ':userId': userId, ':ticketId': ticketId, ':createdAt': seconds(createdAt) });
+  }
+
+  public async takePendingSharedTicket(userId: number): Promise<number | null> {
+    const row = await this.db.get(
+      'SELECT ticket_id FROM pending_shared_tickets WHERE user_id = :userId',
+      { ':userId': userId }
+    );
+    if (row === null) return null;
+    await this.db.run(
+      'DELETE FROM pending_shared_tickets WHERE user_id = :userId',
+      { ':userId': userId }
+    );
+    return requiredNumber(row, 'ticket_id');
   }
 
   public async findEnabled(): Promise<readonly SyncSource[]> {

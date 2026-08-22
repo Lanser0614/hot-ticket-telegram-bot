@@ -7,6 +7,7 @@ import type { ClickSource, UserAgentKind } from '../domain/click-tracking.js';
 import type {
   DestinationQuery,
   NotificationInput,
+  NotificationQueueItem,
   StoredTicket,
   SyncResult,
   SyncSource,
@@ -36,6 +37,17 @@ export interface UserRepository {
     userId: number,
     tripClass: TripClass,
     baggageRequired: boolean,
+    now: Date
+  ): Promise<void>;
+  updateNotificationPreferences(
+    userId: number,
+    input: {
+      instantNotificationsEnabled: boolean;
+      morningDigestEnabled: boolean;
+      quietHoursEnabled: boolean;
+      quietStartMinute: number;
+      quietEndMinute: number;
+    },
     now: Date
   ): Promise<void>;
 }
@@ -73,15 +85,23 @@ export interface TrackedLinkFactory {
 }
 
 export interface ClickRepository {
-  hasRecentClick(userId: number, ticketId: number, since: Date): Promise<boolean>;
+  hasRecentClick(
+    userId: number,
+    ticketId: number,
+    since: Date,
+    context?: { source: ClickSource; subscriptionId: number | null }
+  ): Promise<boolean>;
   addClick(input: {
     ticket: StoredTicket;
     userId: number | null;
     source: ClickSource;
     subscriptionId: number | null;
     userAgentKind: UserAgentKind;
+    benchmarkPrice?: number | null;
+    estimatedSavings?: number | null;
     clickedAt: Date;
   }): Promise<number>;
+  getTrackedSavings(userId: number, currencyCode: string, since: Date): Promise<number>;
 }
 
 export interface PriceHistoryRepository {
@@ -97,10 +117,66 @@ export interface RoutePriceRepository {
 
 export interface SubscriptionRepository {
   findMatching(ticket: Ticket): Promise<readonly Subscription[]>;
+  findSubscriptionById(subscriptionId: number): Promise<Subscription | null>;
   listByUser(userId: number): Promise<readonly Subscription[]>;
   countActiveByUser(userId: number): Promise<number>;
   create(input: Omit<Subscription, 'id' | 'isActive'>, now: Date): Promise<Subscription>;
+  updateOwned(
+    userId: number,
+    subscriptionId: number,
+    input: Omit<Subscription, 'id' | 'userId' | 'originCode' | 'currencyCode' | 'isActive'>,
+    now: Date
+  ): Promise<Subscription | null>;
   deactivateOwned(userId: number, subscriptionId: number, now: Date): Promise<boolean>;
+}
+
+export interface NotificationQueueRepository {
+  enqueue(input: {
+    userId: number;
+    subscriptionId: number;
+    ticketId: number;
+    ticketPrice: number;
+    notificationType: TicketEventType;
+    queuedAt: Date;
+  }): Promise<void>;
+  listDue(now: Date, limit: number): Promise<readonly NotificationQueueItem[]>;
+  discardPendingForSubscriptionExcept(
+    userId: number,
+    subscriptionId: number,
+    keepQueueId: number
+  ): Promise<void>;
+  markSent(queueId: number, telegramMessageId: number, sentAt: Date): Promise<void>;
+  markDiscarded(queueId: number, reason: string): Promise<void>;
+  markDigestOnly(queueId: number): Promise<void>;
+  markRetry(
+    queueId: number,
+    errorMessage: string,
+    nextAttemptAt: Date,
+    terminal: boolean
+  ): Promise<void>;
+  hasDigestDelivery(userId: number, localDay: string): Promise<boolean>;
+  addDigestDelivery(
+    userId: number,
+    localDay: string,
+    telegramMessageId: number,
+    sentAt: Date
+  ): Promise<void>;
+}
+
+export interface ReferralRepository {
+  findCodeByUserId(userId: number): Promise<string | null>;
+  findUserIdByCode(code: string): Promise<number | null>;
+  createCode(userId: number, code: string, createdAt: Date): Promise<boolean>;
+  attribute(input: {
+    referredUserId: number;
+    referrerUserId: number;
+    referralCode: string;
+    sharedTicketId: number | null;
+    attributedAt: Date;
+  }): Promise<boolean>;
+  countReferrals(userId: number): Promise<number>;
+  savePendingSharedTicket(userId: number, ticketId: number, createdAt: Date): Promise<void>;
+  takePendingSharedTicket(userId: number): Promise<number | null>;
 }
 
 export interface SessionRepository {
@@ -111,12 +187,14 @@ export interface SessionRepository {
 
 export interface NotificationHistoryRepository {
   exists(userId: number, subscriptionId: number, ticketId: number, price: number): Promise<boolean>;
+  countSentSince(userId: number, since: Date): Promise<number>;
   addNotification(input: {
     userId: number;
     subscriptionId: number;
     ticketId: number;
     notifiedPrice: number;
     notificationType: TicketEventType;
+    deliveryKind?: 'instant' | 'digest';
     telegramMessageId: number;
     sentAt: Date;
   }): Promise<void>;

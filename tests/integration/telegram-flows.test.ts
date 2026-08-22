@@ -10,6 +10,7 @@ import type {
   TelegramMessageInput
 } from '../../src/application/models.js';
 import { UserService } from '../../src/application/users.js';
+import { ReferralService } from '../../src/application/referrals.js';
 import { ValidationError } from '../../src/domain/errors.js';
 import type { Ticket } from '../../src/domain/ticket.js';
 import { MemoryStore } from '../../src/infrastructure/memory/store.js';
@@ -161,6 +162,41 @@ describe('регистрация и профиль', () => {
     });
     expect(fixture.gateway.messages.at(-1)?.text).toContain('чужой контакт');
     expect((await fixture.store.findByTelegramUserId(100))?.phoneNumber).toBe('+998901234567');
+  });
+
+  it('атрибутирует shared-билет новому пользователю и показывает его после onboarding', async () => {
+    const clock = new MutableClock(new Date('2026-08-04T12:00:00Z'));
+    const store = new MemoryStore(clock);
+    const gateway = new FakeTelegramGateway();
+    const referrer = store.seedUser({ telegramUserId: 999, telegramChatId: 999 });
+    const stored = (await store.upsert(createTicket({}), clock.now())).stored;
+    const referrals = new ReferralService(store, 'HotTicketBot', clock);
+    const shareUrl = await referrals.createShareUrl(referrer.id, stored.id);
+    const payload = new URL(shareUrl ?? '').searchParams.get('start');
+    const router = new TelegramBotRouter({
+      users: new UserService(store, clock),
+      tickets: new TicketService(store, store, clock),
+      subscriptions: new SubscriptionService(store, store, clock),
+      sessions: new SessionService(store, clock),
+      gateway,
+      referrals
+    });
+
+    await router.handleMessage({ ...startMessage, text: `/start ${payload ?? ''}` });
+    expect(gateway.messages.at(-1)?.text).toContain('Выберите язык');
+    await router.handleCallbackQuery({
+      id: 'shared-language', from: { id: 100 }, chatId: 200, data: 'onboarding:language:ru'
+    });
+    await router.handleCallbackQuery({
+      id: 'shared-origin', from: { id: 100 }, chatId: 200, data: 'onboarding:origin:ru:TAS'
+    });
+
+    expect(gateway.messages.some((message) => message.text.includes('Ташкент (TAS) → Стамбул (IST)')))
+      .toBe(true);
+    await expect(referrals.countForUser(referrer.id)).resolves.toBe(1);
+
+    await router.handleMessage({ ...startMessage, text: `/start ${payload ?? ''}` });
+    await expect(referrals.countForUser(referrer.id)).resolves.toBe(1);
   });
 
   it('показывает узбекское меню и принимает узбекские названия городов', async () => {
@@ -443,6 +479,7 @@ describe('подписки и сессии', () => {
         directOnly: false,
         roundTripOnly: false,
         baggageRequired: false,
+        tripClass: 'economy',
         isActive: true
       });
     }
@@ -472,6 +509,7 @@ describe('подписки и сессии', () => {
       directOnly: false,
       roundTripOnly: false,
       baggageRequired: false,
+      tripClass: 'economy',
       isActive: true
     });
 

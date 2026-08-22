@@ -104,6 +104,9 @@ export class MemoryStore implements
   private readonly destinationCache = new Map<string, DestinationCacheRecord>();
   private syncSources: SyncSource[] = [];
   private readonly locks = new Map<string, Date>();
+  private readonly referralCodes = new Map<number, string>();
+  private readonly referrals = new Map<number, { referrerUserId: number; code: string }>();
+  private readonly pendingSharedTickets = new Map<number, number>();
   private nextUserId = 1;
   private nextTicketId = 1;
   private nextSubscriptionId = 1;
@@ -134,6 +137,11 @@ export class MemoryStore implements
       preferredCurrencyCode: 'UZS',
       preferredTripClass: 'economy',
       baggageRequired: false,
+      instantNotificationsEnabled: true,
+      morningDigestEnabled: false,
+      quietHoursEnabled: false,
+      quietStartMinute: 1380,
+      quietEndMinute: 480,
       onboardingCompleted: true,
       isActive: true,
       createdAt: now,
@@ -180,6 +188,11 @@ export class MemoryStore implements
       preferredCurrencyCode: 'UZS',
       preferredTripClass: 'economy',
       baggageRequired: false,
+      instantNotificationsEnabled: true,
+      morningDigestEnabled: false,
+      quietHoursEnabled: false,
+      quietStartMinute: 1380,
+      quietEndMinute: 480,
       onboardingCompleted: false,
       isActive: true,
       createdAt: now,
@@ -249,6 +262,22 @@ export class MemoryStore implements
       baggageRequired,
       updatedAt: now
     });
+    return Promise.resolve();
+  }
+
+  public updateNotificationPreferences(
+    userId: number,
+    input: {
+      instantNotificationsEnabled: boolean;
+      morningDigestEnabled: boolean;
+      quietHoursEnabled: boolean;
+      quietStartMinute: number;
+      quietEndMinute: number;
+    },
+    now: Date
+  ): Promise<void> {
+    const user = this.users.find((item) => item.id === userId);
+    if (user !== undefined) Object.assign(user, input, { updatedAt: now });
     return Promise.resolve();
   }
 
@@ -475,6 +504,11 @@ export class MemoryStore implements
       .map((subscription) => ({ ...subscription })));
   }
 
+  public findSubscriptionById(subscriptionId: number): Promise<Subscription | null> {
+    const subscription = this.subscriptions.find((item) => item.id === subscriptionId);
+    return Promise.resolve(subscription === undefined ? null : { ...subscription });
+  }
+
   public listByUser(userId: number): Promise<readonly Subscription[]> {
     return Promise.resolve(this.subscriptions
       .filter((item) => item.userId === userId)
@@ -503,6 +537,21 @@ export class MemoryStore implements
     return Promise.resolve(true);
   }
 
+  public updateOwned(
+    userId: number,
+    subscriptionId: number,
+    input: Omit<Subscription, 'id' | 'userId' | 'originCode' | 'currencyCode' | 'isActive'>,
+    now: Date
+  ): Promise<Subscription | null> {
+    const subscription = this.subscriptions.find((item) => (
+      item.id === subscriptionId && item.userId === userId && item.isActive
+    ));
+    if (subscription === undefined) return Promise.resolve(null);
+    Object.assign(subscription, input);
+    void now;
+    return Promise.resolve({ ...subscription });
+  }
+
   public findByUserId(userId: number): Promise<UserSession | null> {
     const session = this.sessions.get(userId);
     return Promise.resolve(session === undefined ? null : { ...session });
@@ -525,6 +574,12 @@ export class MemoryStore implements
       && item.ticketId === ticketId
       && item.notifiedPrice === price
     )));
+  }
+
+  public countSentSince(userId: number, since: Date): Promise<number> {
+    return Promise.resolve(this.notificationRecords.filter((item) => (
+      item.userId === userId && item.sentAt >= since
+    )).length);
   }
 
   public addNotification(input: NotificationRecord): Promise<void> {
@@ -614,5 +669,61 @@ export class MemoryStore implements
   public release(key: string): Promise<void> {
     this.locks.delete(key);
     return Promise.resolve();
+  }
+
+  public findCodeByUserId(userId: number): Promise<string | null> {
+    return Promise.resolve(this.referralCodes.get(userId) ?? null);
+  }
+
+  public findUserIdByCode(code: string): Promise<number | null> {
+    for (const [userId, value] of this.referralCodes) {
+      if (value === code) return Promise.resolve(userId);
+    }
+    return Promise.resolve(null);
+  }
+
+  public createCode(userId: number, code: string, createdAt: Date): Promise<boolean> {
+    void createdAt;
+    if (this.referralCodes.has(userId) || [...this.referralCodes.values()].includes(code)) {
+      return Promise.resolve(false);
+    }
+    this.referralCodes.set(userId, code);
+    return Promise.resolve(true);
+  }
+
+  public attribute(input: {
+    referredUserId: number;
+    referrerUserId: number;
+    referralCode: string;
+    sharedTicketId: number | null;
+    attributedAt: Date;
+  }): Promise<boolean> {
+    void input.sharedTicketId;
+    void input.attributedAt;
+    if (input.referredUserId === input.referrerUserId || this.referrals.has(input.referredUserId)) {
+      return Promise.resolve(false);
+    }
+    this.referrals.set(input.referredUserId, {
+      referrerUserId: input.referrerUserId,
+      code: input.referralCode
+    });
+    return Promise.resolve(true);
+  }
+
+  public countReferrals(userId: number): Promise<number> {
+    return Promise.resolve([...this.referrals.values()]
+      .filter((item) => item.referrerUserId === userId).length);
+  }
+
+  public savePendingSharedTicket(userId: number, ticketId: number, createdAt: Date): Promise<void> {
+    void createdAt;
+    this.pendingSharedTickets.set(userId, ticketId);
+    return Promise.resolve();
+  }
+
+  public takePendingSharedTicket(userId: number): Promise<number | null> {
+    const ticketId = this.pendingSharedTickets.get(userId) ?? null;
+    this.pendingSharedTickets.delete(userId);
+    return Promise.resolve(ticketId);
   }
 }

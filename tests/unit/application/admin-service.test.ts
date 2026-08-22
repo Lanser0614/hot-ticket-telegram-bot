@@ -33,6 +33,8 @@ const stats: AdminStatsRecord = {
     new7Days: 2,
     new30Days: 5,
     withActiveSubscriptions: 3,
+    referralsTotal: 0,
+    referrals30Days: 0,
     recent: []
   },
   priceStats: {
