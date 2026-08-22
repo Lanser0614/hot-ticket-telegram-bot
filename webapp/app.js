@@ -15,7 +15,9 @@ const demoMode = globalThis.location.protocol === 'file:'
 
 const state = {
   view: 'home', screen: 'tabs', profile: null, deals: [], destinations: [], subscriptions: [],
-  selectedTicket: null, history: [], historyRange: 30, sheetForm: null, toastTimer: null
+  dealsNextCursor: null, dealsLoadingMore: false, selectedTicket: null, history: [], historyRange: 30,
+  homeSearch: '', homeSort: 'best', homeFilters: { directOnly: false, maxPrice: null, baggageRequired: false },
+  homeSearchTimer: null, sheetForm: null, toastTimer: null
 };
 const icon = (name) => `<span class="icon icon-${name}" aria-hidden="true"></span>`;
 const originNames = { TAS: 'Ташкент', SKD: 'Самарканд', BHK: 'Бухара', FEG: 'Фергана', NMA: 'Наманган', UGC: 'Ургенч' };
@@ -98,30 +100,80 @@ function historyScale(ticket) {
   const position = Math.max(3, Math.min(97, (ticket.price - min) / Math.max(1, max - min) * 100));
   return `<div class="price-scale"><span class="scale-marker" style="left:${position}%"></span></div><div class="scale-values"><span><small>Мин.</small>${formatPrice(min)}</span><span><small>Обычно</small>${formatPrice(median)}</span><span><small>Макс.</small>${formatPrice(max)}</span></div>`;
 }
+function filteredDeals() {
+  const query = state.homeSearch.trim().toLocaleLowerCase('ru-RU'); const filters = state.homeFilters;
+  const items = state.deals.filter((ticket) => {
+    const haystack = `${ticket.destinationName} ${ticket.destinationCode} ${ticket.originName} ${ticket.originCode}`.toLocaleLowerCase('ru-RU');
+    return (!query || haystack.includes(query)) && (!filters.directOnly || ticket.isDirect)
+      && (!filters.maxPrice || ticket.price <= filters.maxPrice) && (!filters.baggageRequired || ticket.hasBaggage);
+  });
+  if (state.homeSort === 'cheapest') return [...items].sort((left, right) => left.price - right.price || left.id - right.id);
+  return items;
+}
+function activeHomeFilterCount() {
+  return Number(state.homeFilters.directOnly) + Number(Boolean(state.homeFilters.maxPrice)) + Number(state.homeFilters.baggageRequired);
+}
+function heroHistoryScale(ticket) {
+  const score = ticket.dealScore ?? {}; const min = score.minPrice ?? ticket.price; const median = score.medianPrice ?? ticket.price; const max = score.maxPrice ?? ticket.price;
+  const range = Math.max(1, max - min); const pricePosition = Math.max(4, Math.min(96, (ticket.price - min) / range * 100)); const medianPosition = Math.max(4, Math.min(96, (median - min) / range * 100));
+  return `<div class="hero-price-scale"><span style="width:${pricePosition}%"></span><i style="left:${medianPosition}%"></i></div><div class="hero-scale-values"><span>мин. ${formatPrice(min)}</span><span>медиана ${formatPrice(median)}</span><span>${formatPrice(max)}</span></div>`;
+}
+function compactTicketRow(ticket) {
+  const discount = percentBelow(ticket); const conditions = [ticket.isDirect ? 'прямой' : 'с пересадкой', ticket.hasBaggage ? 'с багажом' : 'без багажа'].join(' · ');
+  return `<article class="compact-ticket-row"><button class="compact-ticket-main" type="button" data-ticket="${ticket.id}"><span><b>${escapeHtml(ticket.originName)} → ${escapeHtml(ticket.destinationName)}</b><small>${formatDate(ticket.departureDate)} · ${conditions}</small></span><strong>${formatPrice(ticket.price)}<small>${discount ? `−${discount}% к обычной` : 'мало истории'}</small></strong></button><button class="compact-row-bell" type="button" data-track="${ticket.id}" aria-label="Следить за направлением ${escapeHtml(ticket.destinationName)}">${icon('bell')}</button></article>`;
+}
+function homeSearchAndFilters() {
+  const filters = state.homeFilters; const filterCount = activeHomeFilterCount();
+  return `<div class="home-search-row"><label class="home-search">${icon('search')}<input id="deal-search" type="search" value="${escapeHtml(state.homeSearch)}" placeholder="Куда летим? Город или IATA" autocomplete="off"></label><button id="filter-deals" class="home-filter-button" type="button" aria-label="Фильтры">${icon('adjustments')}${filterCount ? `<b>${filterCount}</b>` : ''}</button></div><div class="quick-filter-row"><button id="origin-pill" class="filter-chip origin-filter" type="button">Из ${escapeHtml(originNames[state.profile.defaultOriginCode] ?? state.profile.defaultOriginCode)} ${icon('chevron-left')}</button><button class="filter-chip ${filters.directOnly ? 'active' : ''}" type="button" data-quick-filter="directOnly">Прямые</button><button class="filter-chip ${filters.maxPrice ? 'active' : ''}" type="button" data-quick-filter="maxPrice">До 2 млн</button><button class="filter-chip ${filters.baggageRequired ? 'active' : ''}" type="button" data-quick-filter="baggageRequired">С багажом</button></div>`;
+}
 
 function renderHome() {
-  state.screen = 'tabs'; showTabs(true); setActiveNav(); const hero = state.deals[0];
-  if (!hero) { content.innerHTML = `<section class="screen"><div class="topbar"><div><div class="brand">Hot Ticket</div><h1>Лучшие билеты</h1></div></div><div class="empty-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">Сейчас подходящих билетов нет</div><div class="state-copy">Продолжаем следить за маршрутами и покажем новый HotTicket здесь.</div></div></section>`; return; }
-  const discount = percentBelow(hero); const movers = [...state.deals.slice(1, 3), null];
+  state.screen = 'tabs'; showTabs(true); setActiveNav(); const visibleDeals = filteredDeals(); const hero = visibleDeals[0];
+  if (!hero) {
+    content.innerHTML = `<section class="screen home-screen">${homeSearchAndFilters()}<div class="empty-state home-empty"><span class="state-icon">${icon('ticket')}</span><div class="state-title">По этим условиям билетов нет</div><div class="state-copy">Измените направление или сбросьте фильтры.</div><button id="reset-home-filters" class="secondary state-action" type="button">Сбросить фильтры</button></div></section>`;
+    bindHomeControls(); return;
+  }
+  const discount = percentBelow(hero); const movers = visibleDeals.slice(1, 2); const listDeals = visibleDeals.slice(1);
   const sampleDays = hero.dealScore?.sampleDays ?? 30;
   const dayWord = sampleDays % 10 === 1 && sampleDays % 100 !== 11 ? 'день' : sampleDays % 10 >= 2 && sampleDays % 10 <= 4 && (sampleDays % 100 < 12 || sampleDays % 100 > 14) ? 'дня' : 'дней';
-  content.innerHTML = `<section class="screen home-screen"><header class="home-toolbar"><button id="origin-pill" class="origin-pill" type="button">Из ${escapeHtml(originNames[state.profile.defaultOriginCode] ?? state.profile.defaultOriginCode)}</button><span><button id="refresh-deals" class="icon-button" type="button" aria-label="Обновить">${icon('refresh')}</button><button id="filter-deals" class="icon-button" type="button" aria-label="Фильтры">${icon('filter')}</button></span></header><article class="hero-card"><div class="hero-label"><span>Лучший билет сейчас</span>${discount ? `<b>−${discount}% к обычной</b>` : ''}</div><button class="hero-main compact-hero" type="button" data-ticket="${hero.id}"><span><b>${escapeHtml(hero.originName)} → ${escapeHtml(hero.destinationName)}</b><small>${dateRange(hero)}</small></span><strong>${formatPrice(hero.price)} <small>UZS</small></strong></button><p class="price-caption">Цены по направлению за ${sampleDays} ${dayWord}</p>${historyScale(hero)}<div class="hero-actions"><button class="ghost-button primary-ghost" type="button" data-ticket="${hero.id}">${icon('ticket')} Открыть билет</button><button class="bell-button" type="button" data-track="${hero.id}" aria-label="Следить за направлением">${icon('bell')}</button></div></article><div class="section-heading"><div><h2>Подешевело за 3 дня</h2></div><small>4 маршрута</small></div><div class="mover-list">${movers.map((ticket) => ticket ? moverRow(ticket) : unavailableRow()).join('')}</div><button id="notifications-cta" class="notification-cta" type="button"><span class="cta-icon">${icon('bell')}</span><span><b>Бот пришлёт сообщение, когда цена упадёт</b></span><strong>Включить</strong></button></section>`;
+  content.innerHTML = `<section class="screen home-screen">${homeSearchAndFilters()}<article class="hero-card featured-hero"><div class="hero-label"><span>Лучший билет сейчас</span>${discount ? `<b>${icon('flame')} −${discount}% к обычной</b>` : ''}</div><button class="hero-main compact-hero" type="button" data-ticket="${hero.id}"><span><b>${escapeHtml(hero.originName)} → ${escapeHtml(hero.destinationName)}</b><small>${dateRange(hero)}</small></span><strong>${formatPrice(hero.price)} <small>${escapeHtml(hero.currencyCode)}</small></strong></button><p class="price-caption">Цены по направлению за ${sampleDays} ${dayWord}</p>${heroHistoryScale(hero)}<div class="hero-actions"><button class="ghost-button primary-ghost" type="button" data-ticket="${hero.id}">${icon('ticket')} Открыть билет</button><button class="bell-button" type="button" data-track="${hero.id}" aria-label="Следить за направлением">${icon('bell')}</button></div></article>${movers.length ? `<div class="section-heading mover-heading"><h2>Подешевело за 3 дня</h2><button id="more-movers" type="button">Ещё ${Math.max(0, visibleDeals.length - 1)} ${icon('chevron-left')}</button></div><div class="mover-list compact-mover-list">${movers.map(moverRow).join('')}</div>` : ''}<div class="section-heading compact-ticket-heading"><h2>Все горящие билеты</h2><button id="sort-deals" type="button">${state.homeSort === 'best' ? 'по выгоде' : 'по цене'}</button></div>${listDeals.length ? `<div id="all-hot-tickets" class="compact-ticket-list">${listDeals.map(compactTicketRow).join('')}</div>` : '<div class="compact-list-empty">Других HotTicket пока нет</div>'}${state.dealsNextCursor ? `<button id="load-more-deals" class="secondary load-more-deals" type="button" ${state.dealsLoadingMore ? 'disabled' : ''}>${state.dealsLoadingMore ? 'Загружаем…' : 'Показать ещё'}</button>` : ''}</section>`;
   bindTicketButtons(); document.querySelectorAll('[data-track]').forEach((button) => button.addEventListener('click', () => openTracking(Number(button.dataset.track))));
-  document.querySelector('#notifications-cta')?.addEventListener('click', () => openTracking(hero.id));
+  document.querySelector('#more-movers')?.addEventListener('click', () => document.querySelector('#all-hot-tickets')?.scrollIntoView({ behavior: 'smooth' }));
+  document.querySelector('#sort-deals')?.addEventListener('click', () => { state.homeSort = state.homeSort === 'best' ? 'cheapest' : 'best'; renderHome(); });
+  document.querySelector('#load-more-deals')?.addEventListener('click', loadMoreDeals); bindHomeControls();
+}
+
+function bindHomeControls() {
   document.querySelector('#origin-pill')?.addEventListener('click', () => { state.view = 'profile'; void loadView(); });
-  document.querySelector('#refresh-deals')?.addEventListener('click', refreshDeals);
-  document.querySelector('#filter-deals')?.addEventListener('click', openRoutePicker);
+  document.querySelector('#filter-deals')?.addEventListener('click', openDealsFilters);
+  document.querySelector('#deal-search')?.addEventListener('input', (event) => {
+    state.homeSearch = event.target.value; globalThis.clearTimeout(state.homeSearchTimer);
+    state.homeSearchTimer = globalThis.setTimeout(() => { renderHome(); const input = document.querySelector('#deal-search'); input?.focus(); input?.setSelectionRange(state.homeSearch.length, state.homeSearch.length); }, 180);
+  });
+  document.querySelectorAll('[data-quick-filter]').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.quickFilter; state.homeFilters[key] = key === 'maxPrice' ? (state.homeFilters.maxPrice ? null : 2_000_000) : !state.homeFilters[key]; haptic(); renderHome();
+  }));
+  document.querySelector('#reset-home-filters')?.addEventListener('click', () => { state.homeSearch = ''; state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; renderHome(); });
 }
 
 async function refreshDeals() {
-  try { state.deals = (await api('/api/v1/deals?sort=best&limit=50')).items; haptic(); renderHome(); showToast('Цены обновлены'); }
+  try { const result = await api('/api/v1/deals?sort=best&limit=20'); state.deals = result.items; state.dealsNextCursor = result.nextCursor; haptic(); renderHome(); showToast('Цены обновлены'); }
   catch (error) { showToast(error instanceof Error ? error.message : 'Не удалось обновить'); }
 }
-function moverRow(ticket) {
-  const delta = Math.max(4, Math.round((ticket.dealScore?.percentile ?? 60) / 8));
-  return `<article class="mover-row"><button class="mover-main" type="button" data-ticket="${ticket.id}"><span class="mover-route"><b>${escapeHtml(ticket.destinationName)}</b><small>${ticket.originCode} → ${ticket.destinationCode} · ${formatDate(ticket.departureDate)}</small></span><span class="mover-price"><b>${formatPrice(ticket.price)}</b><small>−${delta}% по маршруту</small></span></button><button class="row-bell" type="button" data-track="${ticket.id}" aria-label="Следить">${icon('bell')}</button></article>`;
+async function loadMoreDeals() {
+  if (state.dealsLoadingMore || !state.dealsNextCursor) return;
+  const scrollTop = globalThis.scrollY; state.dealsLoadingMore = true; renderHome();
+  try {
+    const result = await api(`/api/v1/deals?sort=best&limit=20&cursor=${encodeURIComponent(state.dealsNextCursor)}`);
+    const ids = new Set(state.deals.map((ticket) => ticket.id));
+    state.deals.push(...result.items.filter((ticket) => !ids.has(ticket.id))); state.dealsNextCursor = result.nextCursor;
+  } catch (error) { showToast(error instanceof Error ? error.message : 'Не удалось загрузить билеты'); }
+  finally { state.dealsLoadingMore = false; renderHome(); globalThis.requestAnimationFrame(() => globalThis.scrollTo({ top: scrollTop })); }
 }
-function unavailableRow() { return `<article class="mover-row unavailable"><div class="mover-main"><span class="mover-route"><b>Москва</b><small>TAS → MOW</small></span><span class="mover-price"><b>Нет билетов</b><small>Продолжаем отслеживать</small></span></div><button class="row-bell" type="button" data-track-custom="MOW" aria-label="Следить">${icon('bell')}</button></article>`; }
+function moverRow(ticket) {
+  const median = ticket.dealScore?.medianPrice ?? ticket.price; const advantage = Math.max(0, median - ticket.price);
+  return `<article class="mover-row featured-mover"><button class="mover-main" type="button" data-ticket="${ticket.id}"><span class="mover-route"><b>${escapeHtml(ticket.destinationName)} <em>· ${ticket.destinationCode}</em></b><small>${advantage ? `На ${formatPrice(advantage)} ниже обычной` : `${ticket.originCode} → ${ticket.destinationCode}`}</small></span><span class="mover-price"><small>лучшая цена</small><b>${formatPrice(ticket.price)}</b></span></button><button class="row-bell" type="button" data-track="${ticket.id}" aria-label="Следить">${icon('bell')}</button></article>`;
+}
 function bindTicketButtons() {
   document.querySelectorAll('[data-ticket]').forEach((button) => button.addEventListener('click', () => void openTicket(Number(button.dataset.ticket))));
   document.querySelectorAll('[data-track-custom]').forEach((button) => button.addEventListener('click', () => openTracking(null, button.dataset.trackCustom)));
@@ -207,6 +259,16 @@ function watchCard(subscription) {
   const conditions = [className(subscription.tripClass), subscription.directOnly ? 'прямой' : 'пересадки допустимы', subscription.baggageRequired ? 'с багажом' : 'багаж не важен', subscription.roundTripOnly ? 'туда-обратно' : null].filter(Boolean).join(' · ');
   return `<article class="watch-card"><div class="watch-top"><div><div class="route-code">${subscription.originCode} → ${subscription.destinationCode}</div><h2>${escapeHtml(originNames[subscription.originCode] ?? subscription.originCode)} → ${escapeHtml(destination?.name ?? subscription.destinationCode)}</h2></div><span class="status-pill">Активно</span></div><p class="watch-dates">${formatDate(subscription.departureDateFrom)} — ${formatDate(subscription.departureDateTo)} · ${escapeHtml(conditions)}</p><div class="watch-prices"><span><small>Ваша цель</small><b>${subscription.maxPrice ? `${formatPrice(subscription.maxPrice)} UZS` : 'Любая цена'}</b></span><span><small>Сейчас от</small><b>${current ? `${formatPrice(current.price)} UZS` : 'Нет билетов'}</b></span></div>${current && subscription.maxPrice ? `<div class="goal-track"><span style="width:${progress}%"></span></div><p class="goal-copy ${reached ? 'reached' : ''}">${reached ? 'Цена достигла вашей цели' : `Нужно ещё −${formatPrice(Math.max(0, current.price - subscription.maxPrice))} UZS`}</p>` : '<p class="goal-copy">Продолжаем искать подходящий HotTicket</p>'}<div class="watch-actions">${current ? `<button class="ghost-button" type="button" data-current-ticket="${current.id}" data-subscription-id="${subscription.id}">Открыть билет</button>` : '<span></span>'}<button class="small-action" type="button" data-edit-watch="${subscription.id}">Настроить</button></div></article>`;
 }
+function openDealsFilters() {
+  const filters = state.homeFilters;
+  sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Фильтры билетов</h2><p>Применяются к hero и общему списку HotTicket</p></div><button id="close-sheet" class="icon-button sheet-close" type="button" aria-label="Закрыть">${icon('x')}</button></div><div class="toggle-card deal-filter-card"><div class="toggle-row"><span><b>Только прямые</b><small>Без пересадок</small></span><button class="switch ${filters.directOnly ? 'active' : ''}" type="button" data-deal-filter="directOnly" aria-pressed="${filters.directOnly}"></button></div><div class="toggle-row"><span><b>До 2 млн UZS</b><small>Ограничить максимальную цену</small></span><button class="switch ${filters.maxPrice ? 'active' : ''}" type="button" data-deal-filter="maxPrice" aria-pressed="${Boolean(filters.maxPrice)}"></button></div><div class="toggle-row"><span><b>С багажом</b><small>Багаж включён в билет</small></span><button class="switch ${filters.baggageRequired ? 'active' : ''}" type="button" data-deal-filter="baggageRequired" aria-pressed="${filters.baggageRequired}"></button></div></div><button id="apply-deal-filters" class="primary sheet-primary" type="button">Показать билеты</button><button id="clear-deal-filters" class="danger-link" type="button">Сбросить фильтры</button>`;
+  sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); document.querySelector('#close-sheet')?.addEventListener('click', closeSheet);
+  sheet.querySelectorAll('[data-deal-filter]').forEach((button) => button.addEventListener('click', () => {
+    const key = button.dataset.dealFilter; filters[key] = key === 'maxPrice' ? (filters.maxPrice ? null : 2_000_000) : !filters[key]; openDealsFilters();
+  }));
+  document.querySelector('#apply-deal-filters')?.addEventListener('click', () => { closeSheet(); renderHome(); });
+  document.querySelector('#clear-deal-filters')?.addEventListener('click', () => { state.homeFilters = { directOnly: false, maxPrice: null, baggageRequired: false }; closeSheet(); renderHome(); });
+}
 function openRoutePicker() {
   sheet.innerHTML = `<div class="sheet-handle"></div><div class="sheet-title-row"><div><h2>Выберите направление</h2><p>Откуда: ${escapeHtml(originNames[state.profile.defaultOriginCode] ?? state.profile.defaultOriginCode)}</p></div><button id="close-sheet" class="icon-button sheet-close" type="button">${icon('x')}</button></div><div class="route-picker">${state.destinations.map((item) => `<button type="button" data-pick-route="${item.code}"><span><b>${escapeHtml(item.name)}</b><small>${state.profile.defaultOriginCode} → ${item.code}</small></span>${icon('plus')}</button>`).join('')}</div>`;
   sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); document.querySelector('#close-sheet')?.addEventListener('click', closeSheet);
@@ -243,13 +305,16 @@ function shareText(text, url) {
 async function bootstrap() {
   loading();
   try {
-    const [profile, deals, destinations, subscriptions] = await Promise.all([api('/api/v1/me'), api('/api/v1/deals?sort=best&limit=50'), api('/api/v1/destinations'), api('/api/v1/subscriptions')]);
-    state.profile = profile; state.deals = deals.items; state.destinations = destinations.items; state.subscriptions = subscriptions.items.filter((item) => item.isActive); renderHome();
+    const [profile, deals, destinations, subscriptions] = await Promise.all([api('/api/v1/me'), api('/api/v1/deals?sort=best&limit=20'), api('/api/v1/destinations'), api('/api/v1/subscriptions')]);
+    state.profile = profile; state.deals = deals.items; state.dealsNextCursor = deals.nextCursor; state.destinations = destinations.items; state.subscriptions = subscriptions.items.filter((item) => item.isActive); renderHome();
   } catch (error) { errorScreen(error, bootstrap); }
 }
 async function loadView() { setActiveNav(); if (state.view === 'watchlist') renderWatchlist(); else if (state.view === 'profile') renderProfile(); else renderHome(); }
 
 document.querySelectorAll('[data-view]').forEach((button) => button.addEventListener('click', () => { state.view = button.dataset.view; state.screen = 'tabs'; haptic(); void loadView(); }));
+let pullStartY = null;
+content.addEventListener('touchstart', (event) => { if (globalThis.scrollY <= 0 && state.view === 'home' && state.screen === 'tabs') pullStartY = event.touches[0]?.clientY ?? null; }, { passive: true });
+content.addEventListener('touchend', (event) => { const endY = event.changedTouches[0]?.clientY ?? null; if (pullStartY !== null && endY !== null && endY - pullStartY > 70) void refreshDeals(); pullStartY = null; }, { passive: true });
 backdrop.addEventListener('click', closeSheet); telegram?.BackButton?.onClick?.(() => { if (!sheet.classList.contains('hidden')) closeSheet(); else backToTabs(); });
 if (!demoMode && !telegram?.initData) { showTabs(false); content.innerHTML = `<section class="screen locked-state"><span class="state-icon">${icon('ticket')}</span><div class="state-title">Откройте Hot Ticket из Telegram</div><div class="state-copy">Mini App использует Telegram для безопасного входа.</div></section>`; }
 else { applyTelegramChrome(); telegram?.ready(); telegram?.expand(); void bootstrap(); }

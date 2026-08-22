@@ -1,69 +1,66 @@
-# Hot Ticket UI visual QA
+# Design QA — Hot Ticket main screen
 
-## Evidence
+- Source visual truth: `/var/folders/2r/rnv2z_8d4j7g96n917qglsy00000gn/T/codex-clipboard-9a77eb10-c683-4898-9c68-9d86e9cdb990.png`
+- Normalized source crop: `/private/tmp/hot-ticket-approved-source-normalized.png`
+- Implementation screenshot: `/private/tmp/hot-ticket-approved-implementation-final.png`
+- Focused active-filter screenshot: `/private/tmp/hot-ticket-approved-filters-active.png`
+- Viewport: 390 × 844 CSS px, device scale factor 1
+- Source dimensions: 548 × 1508 px; app crop 504 × 1088 px; normalized comparison crop 390 × 842 px
+- Implementation dimensions: 390 × 844 px
+- State: Deals tab, dark theme, demo API data, default unfiltered catalog
 
-- Source visual truth: `/Users/bellissimopizza/Desktop/Hot Ticket Mini App (standalone).html`
-- Source capture: `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/reference-board.png`
-- Implementation URL: `http://127.0.0.1:4317/`
-- Implementation captures:
-  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-home.jpg`
-  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-tracking.jpg`
-  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-watchlist.jpg`
-  - `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/normalized-profile.jpg`
-- Combined comparison input: `/Users/bellissimopizza/WebstormProjects/hot-ticket-telegram-bot/docs/design-qa/comparison.png`
-- Target CSS viewport: 390 × 844 px, dark mode.
-- Browser capture: in-app browser reported 543 × 837 px at DPR 2. The application shell was fixed to the source width of 390 CSS px; implementation screenshots were center-cropped to 390 × 837 px for comparison. The source capture is 390 × 844 px.
-- States: Home, tracking sheet, Watchlist, Profile. Ticket detail was also rendered and interaction-tested.
+## Full-view comparison evidence
 
-## Full-view comparison
+The normalized source crop and final browser screenshot were opened together in one comparison view. The implementation matches the source hierarchy and density: search and quick filters, highlighted HotTicket hero, route-price scale, one compact price-movement row, compact full catalog, and fixed three-item bottom navigation.
 
-The combined comparison was inspected after normalization. The implementation preserves the source hierarchy: compact toolbar, price-led HotTicket hero, route price scale, three-day movers, notification CTA, persistent navigation, tracking sheet, live Watchlist cards, and compact profile settings.
+The displayed destinations and prices intentionally come from the current API/demo dataset rather than the static values in the design. Default quick filters are not preselected because doing so would hide part of the requested full HotTicket list. Their active appearance was checked separately in the focused screenshot.
 
-## Focused region comparison
+## Focused comparison evidence
 
-Focused checks were made for the Home hero/price scale, tracking presets/slider/toggles, Watchlist goal progress/actions, and Profile notification controls. These regions contain the most fidelity-sensitive typography, spacing, controls, and copy.
+- Hero: orange outline, orange saving badge, route/price alignment, median marker, CTA and tracking bell match the reference treatment.
+- Search/filter controls: city/IATA search, horizontal chips, active chip state, filter counter and advanced filter sheet were rendered and tested.
+- Compact lists: the featured movement row and two-line HotTicket rows match the reference density. Catalog rows retain their tracking bell so every HotTicket can create a watch.
+- Typography: system SF/Segoe fallback, weights, compact uppercase labels, number hierarchy and truncation were checked at 390 px.
+- Colors/tokens: navy background, raised blue-gray cards, blue actions, orange hero state and green savings copy match the source palette.
+- Image/assets: the screen has no raster imagery. Existing Tabler-derived icon assets are used for search, filters, ticket, bell and navigation; no placeholder imagery is present.
+- Copy/content: UI labels follow the source; ticket-specific values remain live-data driven.
 
-## Required fidelity surfaces
+## Interaction and runtime checks
 
-- Fonts and typography: system/SF Pro stack, weights, hierarchy, compact labels, numeric emphasis, and wrapping match the reference closely.
-- Spacing and layout rhythm: 390 px shell, 18 px page gutters, compact card spacing, radii, fixed bottom navigation, and sheet proportions align with the source.
-- Colors and tokens: source dark background/surface/accent/orange/green palette is mapped to shared CSS variables.
-- Image and asset fidelity: the reference has no raster imagery. All visible icons use the existing Tabler icon assets; no emoji or handcrafted SVG replacements were introduced.
-- Copy and content: route analytics and concrete HotTicket facts remain separate; tracking, Watchlist, and profile copy follows the standalone reference and the agreed product behavior.
+- Search for `ALA` promoted the matching Tashkent → Almaty ticket into the hero; clearing restored two compact list rows.
+- Quick-filter activation displayed a counter and filtered the catalog.
+- Advanced filters opened and closed correctly.
+- A compact HotTicket row opened the ticket detail and returned to the catalog.
+- A row bell opened its prefilled tracking sheet.
+- Pull-to-refresh is wired for the home screen.
+- Browser console errors: none.
+- Project verification: 38 test files passed, 274 tests passed, production build passed.
 
 ## Comparison history
 
-### Iteration 1 — blocked
+### Iteration 1
 
-- P1: the implementation shell used a 520 px maximum instead of the 390 px source frame.
-- P1: the Home hero used oversized airport codes and an added page title, changing the above-the-fold hierarchy.
-- P2: the tracking sheet exposed native date fields for every preset and used a number input instead of the source's preset-first flow and price slider.
+- [P2] Hero header wrapped into two lines and made the card materially taller than the reference.
+- [P2] Filter-to-hero spacing and card vertical rhythm pushed the second catalog row under the bottom navigation.
 
-Fixes applied:
+Fixes: reduced chip height and top gap, kept hero labels on one line, tightened hero padding/caption/action spacing, and recaptured the same 390 × 844 state.
 
-- Reduced the app shell, navigation, purchase bar, and bottom sheet to a 390 px maximum.
-- Rebuilt the Home toolbar and compact price-led hero to match the source.
-- Kept dates behind “Свои даты” and added the prefilled price slider plus advanced-condition disclosure.
-
-### Iteration 2 — passed
-
-Post-fix browser captures show no remaining actionable P0/P1/P2 mismatch. Residual differences are content-level and intentional: real API data may produce different prices/routes, and the Watchlist uses exact subscription conditions rather than static mock values.
-
-## Primary interactions tested
-
-- Open ticket detail and change history period.
-- Open/close the tracking sheet from the Home bell.
-- Open existing Watchlist tracking for editing.
-- Navigate among Deals, Watchlist, and Profile.
-- Render profile auto-save controls and quiet-hours editor.
-- Inspect browser console: no application errors. Telegram SDK capability warnings appear only in standalone browser demo mode.
+Post-fix evidence: `/private/tmp/hot-ticket-approved-implementation-final.png` shows both catalog rows above the bottom navigation with the hero proportions aligned to the normalized source.
 
 ## Findings
 
-No actionable P0/P1/P2 findings remain.
+No actionable P0, P1 or P2 differences remain. Live data values and the unfiltered default state are intentional product constraints rather than visual drift.
 
 ## Follow-up polish
 
-- P3: add a dedicated real-device Telegram screenshot pass after deployment because browser demo mode cannot reproduce Telegram safe-area chrome exactly.
+- [P3] A future pass can add a subtle pull-to-refresh progress indicator; refresh behavior already works.
+
+## Implementation checklist
+
+- [x] Match the approved mobile composition.
+- [x] Preserve real HotTicket data and existing detail/watch flows.
+- [x] Make search, quick filters, advanced filters and sorting interactive.
+- [x] Verify the rendered screen and primary interactions.
+- [x] Run lint, typecheck, tests and production build.
 
 final result: passed

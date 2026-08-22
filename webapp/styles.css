@@ -43,6 +43,8 @@ h2 { font-size: 17px; letter-spacing: -.15px; }
 .icon-wifi-off { mask-image: url('./icons/wifi-off.svg'); -webkit-mask-image: url('./icons/wifi-off.svg'); }
 .icon-refresh { mask-image: url('./icons/refresh.svg'); -webkit-mask-image: url('./icons/refresh.svg'); }
 .icon-filter { mask-image: url('./icons/filter.svg'); -webkit-mask-image: url('./icons/filter.svg'); }
+.icon-search { mask-image: url('./icons/search.svg'); -webkit-mask-image: url('./icons/search.svg'); }
+.icon-adjustments { mask-image: url('./icons/adjustments-horizontal.svg'); -webkit-mask-image: url('./icons/adjustments-horizontal.svg'); }
 
 .hero-card, .panel, .watch-card, .settings-list { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
 .hero-card { padding: 15px 17px 16px; box-shadow: 0 18px 38px rgba(0, 0, 0, .13); }
@@ -101,6 +103,93 @@ h2 { font-size: 17px; letter-spacing: -.15px; }
 .notification-cta small, .share-card small { color: var(--muted); font-size: 11.5px; }
 .notification-cta strong { color: var(--accent); font-size: 12.5px; }
 .cta-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: rgba(79,170,241,.15); color: var(--accent); }
+
+.hot-ticket-heading { align-items: flex-end; margin-top: 31px; }
+.hot-ticket-list { display: grid; gap: 10px; }
+.hot-ticket-card { padding: 15px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.hot-ticket-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 13px; width: 100%; padding: 0; border: 0; background: none; text-align: left; }
+.hot-ticket-route, .hot-ticket-price { display: grid; gap: 4px; }
+.hot-ticket-route { min-width: 0; }
+.hot-ticket-route small { color: var(--muted); font-size: 10.5px; }
+.hot-ticket-route b { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.hot-ticket-price { flex: 0 0 auto; text-align: right; }
+.hot-ticket-price b { font-size: 17px; letter-spacing: -.25px; }
+.hot-ticket-price small { color: var(--muted); font-size: 9.5px; font-weight: 700; }
+.hot-ticket-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.hot-ticket-meta span { padding: 4px 7px; border-radius: 7px; background: var(--deep); color: var(--soft); font-size: 9.5px; }
+.hot-ticket-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.hot-ticket-footer > span:last-child { display: flex; align-items: center; gap: 5px; }
+.hot-ticket-discount { color: var(--success); font-size: 11px; font-weight: 750; }
+.hot-ticket-open { min-height: 34px; padding: 7px 12px; border: 0; border-radius: 10px; background: rgba(79,170,241,.14); color: var(--accent); font-size: 11.5px; font-weight: 800; }
+.hot-ticket-footer .row-bell { width: 34px; height: 34px; margin: 0; border-radius: 10px; background: transparent; }
+.load-more-deals { min-height: 44px; margin-top: 12px; }
+.load-more-deals:disabled { cursor: progress; opacity: .65; }
+
+.home-screen { padding-top: calc(22px + env(safe-area-inset-top)); }
+.home-search-row { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 10px; }
+.home-search { display: flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 15px; border: 1px solid rgba(255,255,255,.09); border-radius: 15px; background: var(--surface); color: var(--muted); }
+.home-search .icon { flex: 0 0 auto; width: 19px; height: 19px; }
+.home-search input { min-height: 48px; padding: 0; border: 0; background: transparent; color: var(--text); font-size: 13px; }
+.home-search input::placeholder { color: #647383; }
+.home-search input:focus { border: 0; }
+.home-filter-button { position: relative; display: grid; place-items: center; width: 48px; height: 50px; padding: 0; border: 0; border-radius: 15px; background: var(--surface); }
+.home-filter-button b { position: absolute; top: -4px; right: -3px; display: grid; place-items: center; min-width: 24px; height: 20px; padding: 0 6px; border: 2px solid var(--bg); border-radius: 99px; background: var(--accent); color: var(--accent-text); font-size: 10px; }
+.quick-filter-row { display: flex; gap: 8px; margin: 6px 0 18px; overflow-x: auto; scrollbar-width: none; }
+.quick-filter-row::-webkit-scrollbar { display: none; }
+.filter-chip { flex: 0 0 auto; min-height: 35px; padding: 7px 13px; border: 1px solid rgba(255,255,255,.09); border-radius: 999px; background: var(--surface); color: var(--soft); font-size: 11.5px; font-weight: 750; }
+.filter-chip.active { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.origin-filter { display: inline-flex; align-items: center; gap: 5px; }
+.origin-filter .icon { width: 12px; height: 12px; transform: rotate(-90deg); }
+
+.featured-hero { padding: 16px 18px; border-color: rgba(255,128,55,.5); border-radius: 21px; background: #2b2525; box-shadow: none; }
+.featured-hero .hero-label { margin-bottom: 17px; font-size: 9.5px; }
+.featured-hero .hero-label span { color: #8c99a7; }
+.featured-hero .hero-label span, .featured-hero .hero-label b { white-space: nowrap; }
+.featured-hero .hero-label b { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; background: rgba(255,128,55,.16); color: var(--hot); font-size: 10px; }
+.featured-hero .hero-label b .icon { width: 14px; height: 14px; }
+.featured-hero .compact-hero > span b { font-size: 15.5px; }
+.featured-hero .compact-hero > span small { font-size: 12px; }
+.featured-hero .compact-hero > strong { font-size: 29px; }
+.featured-hero .price-caption { margin: 24px 0 7px; color: #8c99a7; font-size: 10px; }
+.hero-price-scale { position: relative; height: 6px; overflow: visible; border-radius: 99px; background: rgba(255,255,255,.13); }
+.hero-price-scale > span { display: block; min-width: 7%; height: 100%; border-radius: inherit; background: var(--hot); }
+.hero-price-scale > i { position: absolute; top: -3px; width: 2px; height: 12px; background: #697888; }
+.hero-scale-values { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: 8px; color: #748292; font-size: 9.5px; font-weight: 700; }
+.hero-scale-values span:nth-child(2) { text-align: center; }
+.hero-scale-values span:last-child { text-align: right; }
+.featured-hero .hero-actions { grid-template-columns: 1fr 46px; gap: 10px; margin-top: 14px; }
+.featured-hero .primary-ghost { min-height: 45px; font-size: 14px; }
+.featured-hero .bell-button { border: 1px solid rgba(255,255,255,.19); background: transparent; color: var(--text); }
+
+.mover-heading, .compact-ticket-heading { align-items: center; margin: 21px 0 10px; }
+.mover-heading button, .compact-ticket-heading button { display: inline-flex; align-items: center; gap: 2px; padding: 4px 0; border: 0; background: transparent; color: var(--accent); font-size: 12px; font-weight: 750; }
+.mover-heading button .icon { width: 12px; height: 12px; transform: rotate(180deg); }
+.compact-mover-list { border-radius: 17px; }
+.featured-mover { min-height: 78px; }
+.featured-mover .mover-main { padding: 13px 4px 13px 16px; }
+.featured-mover .mover-route b { font-size: 14px; }
+.featured-mover .mover-route b em { color: var(--muted); font-style: normal; }
+.featured-mover .mover-route small { max-width: 155px; color: var(--success); font-weight: 750; }
+.featured-mover .mover-price { gap: 4px; }
+.featured-mover .mover-price small { color: var(--muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; }
+.featured-mover .mover-price b { font-size: 17px; }
+
+.compact-ticket-heading { margin-top: 22px; }
+.compact-ticket-heading button { color: var(--muted); }
+.compact-ticket-list { display: grid; gap: 10px; }
+.compact-ticket-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; min-height: 78px; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); }
+.compact-ticket-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; padding: 14px 4px 14px 16px; border: 0; background: transparent; text-align: left; }
+.compact-ticket-main > span { display: grid; min-width: 0; gap: 4px; }
+.compact-ticket-main > span b { overflow: hidden; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.compact-ticket-main > span small { color: var(--muted); font-size: 10.5px; line-height: 1.25; }
+.compact-ticket-main > strong { display: grid; flex: 0 0 auto; gap: 5px; font-size: 16px; text-align: right; }
+.compact-ticket-main > strong small { color: var(--accent); font-size: 10.5px; font-weight: 750; }
+.compact-ticket-main > strong small:not(:first-child) { white-space: nowrap; }
+.compact-row-bell { display: grid; place-items: center; width: 34px; height: 44px; padding: 0; border: 0; border-radius: 11px; background: var(--deep); color: var(--accent); }
+.compact-row-bell .icon { width: 17px; height: 17px; }
+.compact-list-empty { padding: 20px; border: 1px solid var(--line); border-radius: 17px; color: var(--muted); font-size: 12px; text-align: center; }
+.home-empty { padding-top: 60px; }
+.deal-filter-card { margin-top: 0; }
 
 .bottom-nav { position: fixed; z-index: 20; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); width: min(100%, 390px); margin: 0 auto; padding: 7px 10px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(21,31,43,.97); backdrop-filter: blur(18px); }
 .nav-item { display: grid; place-items: center; gap: 3px; min-height: 49px; padding: 4px; border: 0; background: none; color: var(--muted); font-size: 10.5px; font-weight: 700; }
