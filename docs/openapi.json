@@ -1,0 +1,241 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Hot Ticket Mini App API",
+    "version": "1.0.0",
+    "description": "API for the Hot Ticket Telegram Mini App. Import this file into Postman as OpenAPI 3.0. Every /api/v1 request requires a fresh Telegram WebApp initData value in the Authorization header."
+  },
+  "servers": [
+    {
+      "url": "https://tickets.example.com",
+      "description": "Production server — replace with your PUBLIC_BASE_URL"
+    }
+  ],
+  "tags": [
+    { "name": "Catalog", "description": "HotTicket catalog and price history" },
+    { "name": "Subscriptions", "description": "Route watchlist" },
+    { "name": "Profile", "description": "Telegram user profile and onboarding" },
+    { "name": "Tracking", "description": "Tracked outbound ticket links" }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": { "description": "Service is healthy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } }
+        }
+      }
+    },
+    "/api/v1/deals": {
+      "get": {
+        "tags": ["Catalog"],
+        "summary": "List HotTickets",
+        "parameters": [
+          { "$ref": "#/components/parameters/Destination" },
+          { "$ref": "#/components/parameters/DateFrom" },
+          { "$ref": "#/components/parameters/DateTo" },
+          { "$ref": "#/components/parameters/MaxPrice" },
+          { "$ref": "#/components/parameters/Direct" },
+          { "$ref": "#/components/parameters/Baggage" },
+          { "$ref": "#/components/parameters/DealSort" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": { "description": "Page of tickets", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DealsPage" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/api/v1/tickets/{ticketId}": {
+      "get": {
+        "tags": ["Catalog"],
+        "summary": "Get one HotTicket",
+        "parameters": [
+          { "$ref": "#/components/parameters/TicketId" },
+          { "$ref": "#/components/parameters/SubscriptionIdQuery" }
+        ],
+        "responses": {
+          "200": { "description": "Ticket", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Ticket" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/api/v1/routes/{origin}/{destination}/history": {
+      "get": {
+        "tags": ["Catalog"],
+        "summary": "Get 7/30/90-day route price history",
+        "parameters": [
+          { "$ref": "#/components/parameters/Origin" },
+          { "$ref": "#/components/parameters/DestinationPath" },
+          { "name": "days", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 30 }, "example": 30 }
+        ],
+        "responses": {
+          "200": { "description": "Daily route prices", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RouteHistory" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/api/v1/destinations": {
+      "get": {
+        "tags": ["Catalog"],
+        "summary": "List active destinations or autocomplete cities",
+        "description": "Without q returns currently active destinations. With q returns prefix matches from the full city catalog, including Russian, Uzbek, transliterated names and IATA aliases.",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "example": "ist" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 20, "default": 8 } }
+        ],
+        "responses": {
+          "200": { "description": "Destinations", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DestinationsResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/subscriptions": {
+      "get": {
+        "tags": ["Subscriptions"],
+        "summary": "List route subscriptions",
+        "responses": {
+          "200": { "description": "Subscriptions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubscriptionsResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Subscriptions"],
+        "summary": "Create route subscription",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubscriptionInput" } } } },
+        "responses": {
+          "201": { "description": "Created subscription", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Subscription" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/api/v1/subscriptions/{subscriptionId}": {
+      "patch": {
+        "tags": ["Subscriptions"],
+        "summary": "Update route subscription",
+        "parameters": [{ "$ref": "#/components/parameters/SubscriptionId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubscriptionInput" } } } },
+        "responses": {
+          "200": { "description": "Updated subscription", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Subscription" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      },
+      "delete": {
+        "tags": ["Subscriptions"],
+        "summary": "Deactivate route subscription",
+        "parameters": [{ "$ref": "#/components/parameters/SubscriptionId" }],
+        "responses": {
+          "204": { "description": "Subscription was deactivated" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": ["Profile"],
+        "summary": "Get current Telegram user profile",
+        "responses": {
+          "200": { "description": "Profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "patch": {
+        "tags": ["Profile"],
+        "summary": "Update current user preferences",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProfileUpdate" } } } },
+        "responses": {
+          "200": { "description": "Updated profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/api/v1/onboarding": {
+      "post": {
+        "tags": ["Profile"],
+        "summary": "Complete onboarding",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OnboardingInput" } } } },
+        "responses": {
+          "200": { "description": "Updated profile", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Profile" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "400": { "$ref": "#/components/responses/InvalidRequest" }
+        }
+      }
+    },
+    "/go/{ticketId}": {
+      "get": {
+        "tags": ["Tracking"],
+        "summary": "Track a click and redirect to ticket provider",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/TicketId" },
+          { "name": "u", "in": "query", "description": "Optional user id from signed openUrl", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "s", "in": "query", "description": "Optional subscription id", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "src", "in": "query", "schema": { "type": "string", "enum": ["miniapp_deals", "miniapp_watchlist", "bot_notification", "shared_ticket"] } },
+          { "name": "sig", "in": "query", "description": "Signature generated by the API", "schema": { "type": "string" } }
+        ],
+        "responses": { "302": { "description": "Redirect to Aviasales/provider" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "TelegramMiniApp": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Set to `tma {{telegramInitData}}`. Obtain initData only from a live Telegram Mini App session; do not use a Telegram bot token here."
+      }
+    },
+    "parameters": {
+      "TicketId": { "name": "ticketId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 }, "example": 42 },
+      "SubscriptionId": { "name": "subscriptionId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 }, "example": 12 },
+      "SubscriptionIdQuery": { "name": "subscription_id", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+      "Origin": { "name": "origin", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/IataCode" }, "example": "TAS" },
+      "DestinationPath": { "name": "destination", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/IataCode" }, "example": "IST" },
+      "Destination": { "name": "destination", "in": "query", "schema": { "$ref": "#/components/schemas/IataCode" }, "example": "IST" },
+      "DateFrom": { "name": "date_from", "in": "query", "schema": { "type": "string", "format": "date" }, "example": "2026-09-01" },
+      "DateTo": { "name": "date_to", "in": "query", "schema": { "type": "string", "format": "date" }, "example": "2026-10-31" },
+      "MaxPrice": { "name": "max_price", "in": "query", "schema": { "type": "integer", "minimum": 1 }, "example": 2000000 },
+      "Direct": { "name": "direct", "in": "query", "schema": { "type": "boolean", "default": false } },
+      "Baggage": { "name": "baggage", "in": "query", "schema": { "type": "boolean", "default": false } },
+      "DealSort": { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["best", "cheapest", "recent", "departing_soon"], "default": "best" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+      "Cursor": { "name": "cursor", "in": "query", "description": "Opaque cursor returned by the previous page", "schema": { "type": "string" } }
+    },
+    "responses": {
+      "Unauthorized": { "description": "Missing, invalid or expired Telegram Mini App initData", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" }, "example": { "error": { "code": "unauthorized", "message": "Сессия Telegram устарела" } } } } },
+      "InvalidRequest": { "description": "Request validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Resource was not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "IataCode": { "type": "string", "pattern": "^[A-Z0-9]{3}$", "example": "IST" },
+      "Health": { "type": "object", "required": ["status"], "properties": { "status": { "type": "string", "example": "ok" } } },
+      "Error": { "type": "object", "required": ["error"], "properties": { "error": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string", "example": "invalid_request" }, "message": { "type": "string" } } } } },
+      "DealScore": { "type": "object", "required": ["level", "sampleDays", "percentile", "daysBelow", "minPrice", "medianPrice", "maxPrice", "trend"], "properties": { "level": { "type": "string", "enum": ["insufficient_data", "stable", "regular", "good", "great", "lowest"] }, "sampleDays": { "type": "integer" }, "percentile": { "type": "integer", "nullable": true }, "daysBelow": { "type": "integer" }, "minPrice": { "type": "integer", "nullable": true }, "medianPrice": { "type": "integer", "nullable": true }, "maxPrice": { "type": "integer", "nullable": true }, "trend": { "type": "string", "nullable": true, "enum": ["falling", "rising", "flat", null] } } },
+      "Ticket": { "type": "object", "required": ["id", "originCode", "originName", "destinationCode", "destinationName", "departureDate", "returnDate", "price", "currencyCode", "airlineName", "isDirect", "tripClass", "hasBaggage", "lastSeenAt", "dealScore", "openUrl", "shareUrl"], "properties": { "id": { "type": "integer" }, "originCode": { "$ref": "#/components/schemas/IataCode" }, "originName": { "type": "string" }, "destinationCode": { "$ref": "#/components/schemas/IataCode" }, "destinationName": { "type": "string" }, "departureDate": { "type": "string", "format": "date" }, "returnDate": { "type": "string", "format": "date", "nullable": true }, "price": { "type": "integer", "minimum": 1, "example": 1480000 }, "currencyCode": { "type": "string", "example": "UZS" }, "airlineName": { "type": "string", "nullable": true }, "isDirect": { "type": "boolean" }, "tripClass": { "type": "string", "enum": ["economy", "business"] }, "hasBaggage": { "type": "boolean" }, "lastSeenAt": { "type": "string", "format": "date-time" }, "dealScore": { "$ref": "#/components/schemas/DealScore" }, "openUrl": { "type": "string", "format": "uri" }, "shareUrl": { "type": "string", "format": "uri", "nullable": true } } },
+      "DealsPage": { "type": "object", "required": ["items", "nextCursor"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Ticket" } }, "nextCursor": { "type": "string", "nullable": true } } },
+      "DestinationItem": { "type": "object", "required": ["code", "name", "searchNames"], "properties": { "code": { "$ref": "#/components/schemas/IataCode" }, "name": { "type": "string" }, "searchNames": { "type": "array", "items": { "type": "string" } } } },
+      "DestinationsResponse": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/DestinationItem" } } } },
+      "RouteDailyPoint": { "type": "object", "required": ["day", "minPrice", "averagePrice", "medianPrice", "maxPrice", "sampleCount"], "properties": { "day": { "type": "string", "format": "date" }, "minPrice": { "type": "integer" }, "averagePrice": { "type": "integer" }, "medianPrice": { "type": "integer" }, "maxPrice": { "type": "integer" }, "sampleCount": { "type": "integer" } } },
+      "RouteHistory": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/RouteDailyPoint" } } } },
+      "SubscriptionInput": { "type": "object", "required": ["departureDateFrom", "departureDateTo"], "properties": { "destinationCode": { "allOf": [{ "$ref": "#/components/schemas/IataCode" }], "nullable": true, "example": "IST" }, "departureDateFrom": { "type": "string", "format": "date", "example": "2026-09-01" }, "departureDateTo": { "type": "string", "format": "date", "example": "2026-10-31" }, "maxPrice": { "type": "integer", "minimum": 1, "nullable": true, "example": 1800000 }, "directOnly": { "type": "boolean", "default": false }, "roundTripOnly": { "type": "boolean", "default": false }, "baggageRequired": { "type": "boolean", "default": false }, "tripClass": { "type": "string", "enum": ["economy", "business"], "default": "economy" } }, "example": { "destinationCode": "IST", "departureDateFrom": "2026-09-01", "departureDateTo": "2026-10-31", "maxPrice": 1800000, "directOnly": true, "roundTripOnly": true, "baggageRequired": false, "tripClass": "economy" } },
+      "Subscription": { "allOf": [{ "$ref": "#/components/schemas/SubscriptionInput" }, { "type": "object", "required": ["id", "userId", "originCode", "currencyCode", "isActive", "currentTicket"], "properties": { "id": { "type": "integer" }, "userId": { "type": "integer" }, "originCode": { "$ref": "#/components/schemas/IataCode" }, "currencyCode": { "type": "string", "example": "UZS" }, "isActive": { "type": "boolean" }, "currentTicket": { "allOf": [{ "$ref": "#/components/schemas/Ticket" }], "nullable": true } } }] },
+      "SubscriptionsResponse": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Subscription" } } } },
+      "TrackedSavings": { "type": "object", "required": ["amount", "currency", "periodDays"], "properties": { "amount": { "type": "integer", "minimum": 0 }, "currency": { "type": "string", "enum": ["UZS"] }, "periodDays": { "type": "integer", "enum": [90] } } },
+      "Profile": { "type": "object", "required": ["telegramUserId", "firstName", "username", "languageCode", "defaultOriginCode", "onboardingCompleted", "preferredTripClass", "baggageRequired", "instantNotificationsEnabled", "morningDigestEnabled", "quietHoursEnabled", "quietStartMinute", "quietEndMinute", "trackedSavings", "referralCount", "referralShareUrl"], "properties": { "telegramUserId": { "type": "integer" }, "firstName": { "type": "string", "nullable": true }, "username": { "type": "string", "nullable": true }, "languageCode": { "type": "string", "nullable": true, "enum": ["ru", "uz", null] }, "defaultOriginCode": { "$ref": "#/components/schemas/IataCode" }, "onboardingCompleted": { "type": "boolean" }, "preferredTripClass": { "type": "string", "enum": ["economy", "business"] }, "baggageRequired": { "type": "boolean" }, "instantNotificationsEnabled": { "type": "boolean" }, "morningDigestEnabled": { "type": "boolean" }, "quietHoursEnabled": { "type": "boolean" }, "quietStartMinute": { "type": "integer", "minimum": 0, "maximum": 1439 }, "quietEndMinute": { "type": "integer", "minimum": 0, "maximum": 1439 }, "trackedSavings": { "$ref": "#/components/schemas/TrackedSavings" }, "referralCount": { "type": "integer", "minimum": 0 }, "referralShareUrl": { "type": "string", "format": "uri", "nullable": true } } },
+      "OnboardingInput": { "type": "object", "required": ["languageCode", "defaultOriginCode"], "properties": { "languageCode": { "type": "string", "enum": ["ru", "uz"] }, "defaultOriginCode": { "$ref": "#/components/schemas/IataCode" } }, "example": { "languageCode": "ru", "defaultOriginCode": "TAS" } },
+      "ProfileUpdate": { "type": "object", "minProperties": 1, "properties": { "preferredTripClass": { "type": "string", "enum": ["economy", "business"] }, "baggageRequired": { "type": "boolean" }, "defaultOriginCode": { "$ref": "#/components/schemas/IataCode" }, "languageCode": { "type": "string", "enum": ["ru", "uz"] }, "instantNotificationsEnabled": { "type": "boolean" }, "morningDigestEnabled": { "type": "boolean" }, "quietHoursEnabled": { "type": "boolean" }, "quietStartMinute": { "type": "integer", "minimum": 0, "maximum": 1439 }, "quietEndMinute": { "type": "integer", "minimum": 0, "maximum": 1439 } } }
+    }
+  },
+  "security": [{ "TelegramMiniApp": [] }]
+}

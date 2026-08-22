@@ -265,6 +265,7 @@ const SCRIPT = `
   const sections = links.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
   const observer = new IntersectionObserver((entries) => { const visible = entries.filter((entry) => entry.isIntersecting).sort((a,b) => b.intersectionRatio - a.intersectionRatio)[0]; if (!visible) return; for (const link of links) link.classList.toggle('active', link.getAttribute('href') === '#' + visible.target.id); }, { rootMargin:'-20% 0px -65% 0px', threshold:[0,.2,.5] });
   for (const section of sections) observer.observe(section);
+  window.setInterval(() => { const active = document.activeElement; if (document.visibilityState === 'visible' && !(active instanceof HTMLInputElement)) window.location.reload(); }, 60_000);
 `;
 
 export function renderAdminPage(dashboard: AdminDashboard, flash?: string, basePath = '/admin'): string {

@@ -116,6 +116,7 @@ describe('admin server', () => {
       headers: { authorization: authHeader('admin', 'secret') }
     });
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('no-store');
     const html = await response.text();
     expect(html).toContain('Hot Ticket');
     expect(html).toContain('Стамбул');
@@ -135,6 +136,7 @@ describe('admin server', () => {
     expect(called).toBe(1);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toContain('/admin/?flash=');
+    expect(decodeURIComponent(response.headers.get('location') ?? '')).toContain('Синхронизация завершена');
   });
 
   it('отклоняет неверный пароль', async () => {

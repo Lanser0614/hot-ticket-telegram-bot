@@ -88,6 +88,8 @@ export function createAdminServer(dependencies: AdminServerDependencies): Expres
     try {
       const dashboard = await dependencies.adminService.getDashboard(parseQuery(request));
       const flash = firstValue(request.query.flash);
+      response.set('Cache-Control', 'no-store, max-age=0, must-revalidate');
+      response.set('Pragma', 'no-cache');
       response.type('text/html; charset=utf-8').send(
         renderAdminPage(dashboard, flash.length === 0 ? undefined : flash, ADMIN_BASE_PATH)
       );
@@ -102,7 +104,7 @@ export function createAdminServer(dependencies: AdminServerDependencies): Expres
   admin.post('/sync', async (_request: Request, response: Response) => {
     try {
       const result = await dependencies.runSync();
-      const flash = `Синхронизация запущена. Обработано источников: ${result.processedSources}.`;
+      const flash = `Синхронизация завершена. Обработано источников: ${result.processedSources}.`;
       response.redirect(`${ADMIN_BASE_PATH}/?flash=${encodeURIComponent(flash)}`);
     } catch (error: unknown) {
       dependencies.logger.error('admin_manual_sync_failed', {
