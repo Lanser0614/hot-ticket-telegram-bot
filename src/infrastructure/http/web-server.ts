@@ -360,9 +360,11 @@ export function createWebServer(dependencies: WebServerDependencies): Express {
   }));
 
   app.get('/api/v1/destinations', asyncHandler(async (request, response) => {
-    response.json({
-      items: await dependencies.miniApp.listDestinations(authenticatedUser(response))
-    });
+    const telegramUserId = authenticatedUser(response); const query = firstValue(request.query.q);
+    const items = query === null
+      ? await dependencies.miniApp.listDestinations(telegramUserId)
+      : await dependencies.miniApp.searchDestinations(telegramUserId, query, Math.min(20, optionalInteger(request.query.limit) ?? 8));
+    response.json({ items });
   }));
 
   app.get('/api/v1/subscriptions', asyncHandler(async (request, response) => {

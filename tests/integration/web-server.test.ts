@@ -243,6 +243,25 @@ describe('Mini App web server', () => {
     await expect(response.json()).resolves.toMatchObject({
       items: [{ originName: 'Toshkent', destinationName: 'Istanbul' }]
     });
+
+    const destinations = await fetch(`${baseUrl}/api/v1/destinations`, {
+      headers: { authorization: `tma ${initData(clock)}` }
+    });
+    expect(destinations.status).toBe(200);
+    const destinationPayload = await destinations.json() as {
+      items: Array<{ code: string; name: string; searchNames: string[] }>;
+    };
+    expect(destinationPayload.items[0]).toMatchObject({ code: 'IST', name: 'Istanbul' });
+    expect(destinationPayload.items[0]?.searchNames).toEqual(expect.arrayContaining(['Стамбул', 'Istanbul', 'IST']));
+
+    const autocomplete = await fetch(`${baseUrl}/api/v1/destinations?q=bu&limit=5`, {
+      headers: { authorization: `tma ${initData(clock)}` }
+    });
+    expect(autocomplete.status).toBe(200);
+    const autocompletePayload = await autocomplete.json() as {
+      items: Array<{ code: string; name: string; searchNames: string[] }>;
+    };
+    expect(autocompletePayload.items).toContainEqual(expect.objectContaining({ code: 'BHK', name: 'Buxoro' }));
   });
 
   it('фиксирует человеческий переход один раз и редиректит на Aviasales', async () => {

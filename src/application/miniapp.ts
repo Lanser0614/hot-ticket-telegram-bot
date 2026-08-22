@@ -16,7 +16,7 @@ import { calculateDealScore, type DealScore } from '../domain/deal-score.js';
 import { normalizeIataCode } from '../domain/codes.js';
 import { assertIsoDate, dateInTimeZone } from '../domain/dates.js';
 import { ValidationError } from '../domain/errors.js';
-import { getLocalizedLocationName, isUzbekistanOrigin } from '../domain/locations.js';
+import { getLocalizedLocationName, getLocationSearchNames, isUzbekistanOrigin, searchLocationsByPrefix } from '../domain/locations.js';
 import { assertMoney } from '../domain/money.js';
 import { createRouteKey, type RouteDailyPoint } from '../domain/route-price.js';
 import type { Subscription } from '../domain/subscription.js';
@@ -213,6 +213,7 @@ export class MiniAppService {
   public async listDestinations(telegramUserId: number): Promise<readonly {
     code: string;
     name: string;
+    searchNames: readonly string[];
   }[]> {
     const user = await this.requireUser(telegramUserId);
     const codes = await this.tickets.listActiveDestinations({
@@ -223,7 +224,18 @@ export class MiniAppService {
       baggageRequired: user.baggageRequired
     });
     const language = userLanguage(user.languageCode);
-    return codes.map((code) => ({ code, name: getLocalizedLocationName(code, language) ?? code }));
+    return codes.map((code) => ({
+      code, name: getLocalizedLocationName(code, language) ?? code, searchNames: getLocationSearchNames(code)
+    }));
+  }
+
+  public async searchDestinations(telegramUserId: number, query: string, limit: number): Promise<readonly {
+    code: string;
+    name: string;
+    searchNames: readonly string[];
+  }[]> {
+    const user = await this.requireUser(telegramUserId);
+    return searchLocationsByPrefix(query, userLanguage(user.languageCode), limit);
   }
 
   public async listSubscriptions(telegramUserId: number): Promise<readonly MiniAppSubscriptionView[]> {

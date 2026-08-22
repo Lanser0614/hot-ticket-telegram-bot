@@ -4,14 +4,24 @@ export function escapeHtml(value) {
   }[character]));
 }
 
+let activeLocale = 'ru-RU';
+
+export function setFormatLanguage(languageCode) {
+  activeLocale = String(languageCode ?? '').toLowerCase().startsWith('uz') ? 'uz-UZ' : 'ru-RU';
+}
+
 export function formatPrice(value) {
-  return new Intl.NumberFormat('ru-RU').format(value).replaceAll('\u00a0', ' ');
+  return new Intl.NumberFormat(activeLocale).format(value).replace(/[,\u00a0\u202f]/gu, ' ');
 }
 
 export function formatDate(value, options = { day: 'numeric', month: 'short' }) {
   if (!value) return '—';
   const [year, month, day] = value.slice(0, 10).split('-').map(Number);
-  return new Intl.DateTimeFormat('ru-RU', options).format(new Date(Date.UTC(year, month - 1, day)));
+  if (activeLocale === 'uz-UZ' && options.day === 'numeric' && options.month === 'short') {
+    const months = ['yan.', 'fev.', 'mar.', 'apr.', 'may', 'iyun', 'iyul', 'avg.', 'sen.', 'okt.', 'noy.', 'dek.'];
+    return `${day} ${months[month - 1]}`;
+  }
+  return new Intl.DateTimeFormat(activeLocale, options).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 export function todayInTashkent(offsetDays = 0) {

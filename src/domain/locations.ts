@@ -13,6 +13,12 @@ export interface LocationMatch {
   readonly label: string;
 }
 
+export interface LocationSearchOption {
+  readonly code: string;
+  readonly name: string;
+  readonly searchNames: readonly string[];
+}
+
 export type LocationResolution =
   | { readonly kind: 'resolved'; readonly code: string }
   | { readonly kind: 'ambiguous'; readonly candidates: readonly LocationMatch[] }
@@ -35,6 +41,10 @@ const UZBEK_LOCATION_NAMES: Readonly<Record<string, string>> = {
   KSQ: 'Qarshi',
   AZN: 'Andijon',
   NVI: 'Navoiy'
+};
+const COMMON_LOCATION_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  TAS: ['Tashkent'], IST: ['Istanbul'], DXB: ['Dubai'], ALA: ['Almaty'],
+  SKD: ['Samarkand'], BHK: ['Bukhara'], FEG: ['Fergana'], UGC: ['Urgench']
 };
 
 export const UZBEKISTAN_ORIGIN_CODES = [
@@ -94,6 +104,48 @@ export function getLocalizedLocationName(code: string, language: 'ru' | 'uz'): s
   const name = getLocationName(normalizedCode);
   if (name === null || language === 'ru') return name;
   return UZBEK_LOCATION_NAMES[normalizedCode] ?? transliterateRussian(name);
+}
+
+export function getLocationSearchNames(code: string): readonly string[] {
+  const normalizedCode = code.trim().toUpperCase(); const location = LOCATIONS[normalizedCode];
+  if (location === undefined) return [normalizedCode];
+  return [...new Set([
+    normalizedCode, location.name, location.cityName, transliterateRussian(location.name),
+    transliterateRussian(location.cityName), UZBEK_LOCATION_NAMES[normalizedCode],
+    ...(COMMON_LOCATION_ALIASES[normalizedCode] ?? [])
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0))];
+}
+
+export function searchLocationsByPrefix(
+  input: string,
+  language: 'ru' | 'uz',
+  limit = 8
+): readonly LocationSearchOption[] {
+  const query = normalizeSearchText(input); if (query.length === 0) return [];
+  const options = new Map<string, LocationSearchOption & { readonly score: number }>();
+  for (const location of Object.values(LOCATIONS)) {
+    if (location === undefined) continue;
+    const code = IATA_CODE_PATTERN.test(location.cityCode) && LOCATIONS[location.cityCode] !== undefined
+      ? location.cityCode
+      : location.code;
+    if (options.has(code)) continue;
+    const name = getLocalizedLocationName(code, language) ?? code; const searchNames = getLocationSearchNames(code);
+    const normalizedCode = normalizeSearchText(code); const normalizedName = normalizeSearchText(name);
+    const productNameMatch = [UZBEK_LOCATION_NAMES[code], ...(COMMON_LOCATION_ALIASES[code] ?? [])]
+      .some((candidate) => candidate !== undefined && normalizeSearchText(candidate).startsWith(query));
+    const aliasMatch = searchNames.some((candidate) => {
+      const normalizedCandidate = normalizeSearchText(candidate);
+      return normalizedCandidate !== normalizedCode && normalizedCandidate !== normalizedName
+        && normalizedCandidate.startsWith(query);
+    });
+    if (!normalizedCode.startsWith(query) && !normalizedName.startsWith(query) && !aliasMatch) continue;
+    const score = productNameMatch ? 0 : normalizedName.startsWith(query) ? 1 : aliasMatch ? 2 : 3;
+    options.set(code, { code, name, searchNames, score });
+  }
+  return [...options.values()]
+    .sort((left, right) => left.score - right.score || left.name.localeCompare(right.name, language === 'uz' ? 'uz' : 'ru'))
+    .slice(0, Math.max(1, Math.min(20, limit)))
+    .map(({ code, name, searchNames }) => ({ code, name, searchNames }));
 }
 
 export function getLocationCountryCode(code: string): string | null {

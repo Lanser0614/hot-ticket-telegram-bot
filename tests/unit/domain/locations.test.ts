@@ -4,9 +4,11 @@ import {
   formatLocalizedLocationLabel,
   formatLocationLabel,
   getLocationCountryCode,
+  getLocationSearchNames,
   getLocalizedLocationName,
   getLocationName,
   resolveLocation,
+  searchLocationsByPrefix,
   UZBEKISTAN_ORIGIN_CODES
 } from '../../../src/domain/locations.js';
 
@@ -57,6 +59,15 @@ describe('русский справочник локаций', () => {
     expect(resolveLocation('Toshkent')).toEqual({ kind: 'resolved', code: 'TAS' });
     expect(resolveLocation('Samarqand')).toEqual({ kind: 'resolved', code: 'SKD' });
     expect(resolveLocation('Istanbul')).toEqual({ kind: 'resolved', code: 'IST' });
+    expect(getLocationSearchNames('DXB')).toEqual(expect.arrayContaining(['Дубай', 'Dubay', 'Dubai', 'DXB']));
+  });
+
+  it('предлагает города только по началу названия или алиаса', () => {
+    expect(searchLocationsByPrefix('bu', 'uz').map(({ code }) => code)).toContain('BHK');
+    expect(searchLocationsByPrefix('бух', 'ru')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'BHK', name: 'Бухара' })
+    ]));
+    expect(searchLocationsByPrefix('amb', 'ru').map(({ code }) => code)).not.toContain('IST');
   });
 
   it('предлагает как origin только аэропорты Узбекистана', () => {
