@@ -29,6 +29,18 @@ export interface AdminPriceAnalytics {
   readonly query: AdminPriceAnalyticsQuery;
   readonly origins: readonly string[];
   readonly series: readonly AdminRoutePriceSeries[];
+  readonly optimalDepartureDates: readonly AdminOptimalDepartureDate[];
+}
+
+export interface AdminOptimalDepartureDate {
+  readonly originCode: string;
+  readonly destinationCode: string;
+  readonly tripClass: TripClass;
+  readonly departureDate: string;
+  readonly minPrice: number;
+  readonly observedAt: Date;
+  readonly routeMedianPrice: number;
+  readonly savingPercent: number;
 }
 
 export interface AdminTicketRecord {

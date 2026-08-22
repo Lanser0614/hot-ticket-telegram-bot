@@ -409,6 +409,13 @@ describe('ApplicationRepositories on SQLite', () => {
       uniqueUsers: 1,
       averagePrice: 1_850_000
     }]);
+    const analytics = await new SqliteAdminRepository(database).getPriceAnalytics({
+      destinationCode: 'IST', originCode: 'TAS', periodDays: 30
+    });
+    expect(analytics.series).toHaveLength(1);
+    expect(analytics.optimalDepartureDates[0]).toMatchObject({
+      originCode: 'TAS', destinationCode: 'IST', departureDate: '2026-09-15', minPrice: 1_850_000
+    });
     database.close();
   });
 });

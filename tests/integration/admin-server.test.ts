@@ -61,7 +61,7 @@ const repository: AdminRepository = {
     },
     lastSync: null
   }),
-  getPriceAnalytics: (query) => Promise.resolve({ query, origins: ['TAS'], series: [] })
+  getPriceAnalytics: (query) => Promise.resolve({ query, origins: ['TAS'], series: [], optimalDepartureDates: [] })
 };
 
 const servers: Array<{ close: (callback: () => void) => void }> = [];

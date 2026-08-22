@@ -4,6 +4,7 @@ import type {
   AdminPricePoint,
   AdminPriceAnalytics,
   AdminPriceAnalyticsQuery,
+  AdminOptimalDepartureDate,
   AdminRoutePriceSeries,
   AdminRepository,
   AdminRoutePriceRecord,
@@ -170,7 +171,7 @@ export class SqliteAdminRepository implements AdminRepository {
     const condition = `day >= date('now', '+5 hours', :dateFrom)
       AND (:destination IS NULL OR destination_code = :destination)
       AND (:origin IS NULL OR origin_code = :origin)`;
-    const [rows, originRows] = await Promise.all([
+    const [rows, originRows, observationRows] = await Promise.all([
       this.db.all(`
         WITH ranked_routes AS (
           SELECT origin_code, destination_code, trip_class,
@@ -189,7 +190,15 @@ export class SqliteAdminRepository implements AdminRepository {
         WHERE ${condition.replaceAll('origin_code', 'd.origin_code').replaceAll('destination_code', 'd.destination_code').replace('day', 'd.day')}
         ORDER BY d.origin_code ASC, d.destination_code ASC, d.trip_class ASC, d.day ASC
       `, parameters),
-      this.db.all(`SELECT DISTINCT origin_code FROM route_price_daily WHERE ${condition} ORDER BY origin_code ASC`, parameters)
+      this.db.all(`SELECT DISTINCT origin_code FROM route_price_daily WHERE ${condition} ORDER BY origin_code ASC`, parameters),
+      this.db.all(`
+        SELECT origin_code, destination_code, trip_class, departure_date, price, observed_at
+        FROM route_price_observations
+        WHERE observed_at >= unixepoch('now', '+5 hours', :dateFrom)
+          AND (:destination IS NULL OR destination_code = :destination)
+          AND (:origin IS NULL OR origin_code = :origin)
+        ORDER BY price ASC, observed_at DESC
+      `, parameters)
     ]);
     const series = new Map<string, { originCode: string; destinationCode: string; tripClass: TripClass; observationDays: number; averagePrice: number; points: { day: string; price: number }[] }>();
     for (const row of rows) {
@@ -204,10 +213,40 @@ export class SqliteAdminRepository implements AdminRepository {
       current.points.push({ day: asString(row.day), price: asNumber(row.min_price) });
       series.set(key, current);
     }
+    const routeKeys = new Set(series.keys());
+    const byDeparture = new Map<string, { originCode: string; destinationCode: string; tripClass: TripClass; departureDate: string; minPrice: number; observedAt: Date }>();
+    const routePrices = new Map<string, number[]>();
+    for (const row of observationRows) {
+      const originCode = asString(row.origin_code);
+      const destinationCode = asString(row.destination_code);
+      const tripClass = asTripClass(row.trip_class);
+      const routeKey = `${originCode}|${destinationCode}|${tripClass}`;
+      if (!routeKeys.has(routeKey)) continue;
+      const price = asNumber(row.price);
+      const departureDate = asString(row.departure_date);
+      const observedAt = new Date(asNumber(row.observed_at) * 1_000);
+      const departureKey = `${routeKey}|${departureDate}`;
+      const existing = byDeparture.get(departureKey);
+      if (existing === undefined || price < existing.minPrice || (price === existing.minPrice && observedAt > existing.observedAt)) {
+        byDeparture.set(departureKey, { originCode, destinationCode, tripClass, departureDate, minPrice: price, observedAt });
+      }
+      const prices = routePrices.get(routeKey) ?? [];
+      prices.push(price);
+      routePrices.set(routeKey, prices);
+    }
+    const optimalDepartureDates: AdminOptimalDepartureDate[] = [...byDeparture.values()].map((item) => {
+      const prices = (routePrices.get(`${item.originCode}|${item.destinationCode}|${item.tripClass}`) ?? []).sort((left, right) => left - right);
+      const middle = Math.floor(prices.length / 2);
+      const routeMedianPrice = prices.length % 2 === 0
+        ? Math.round(((prices[middle - 1] ?? 0) + (prices[middle] ?? 0)) / 2)
+        : prices[middle] ?? item.minPrice;
+      return { ...item, routeMedianPrice, savingPercent: routeMedianPrice === 0 ? 0 : Math.max(0, Math.round((routeMedianPrice - item.minPrice) / routeMedianPrice * 100)) };
+    }).sort((left, right) => left.minPrice - right.minPrice || left.departureDate.localeCompare(right.departureDate)).slice(0, 10);
     return {
       query,
       origins: originRows.map((row) => asString(row.origin_code)),
       series: [...series.values()] as readonly AdminRoutePriceSeries[]
+      , optimalDepartureDates
     };
   }
 
