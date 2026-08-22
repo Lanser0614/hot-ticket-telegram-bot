@@ -11,6 +11,7 @@ export type SortDirection = 'asc' | 'desc';
 
 export interface AdminTicketRecord {
   readonly id: number;
+  readonly originCode: string;
   readonly destinationCode: string;
   readonly price: number;
   readonly currencyCode: string;
@@ -130,6 +131,7 @@ export interface AdminDestinationOption {
 
 export interface AdminTicketView {
   readonly id: number;
+  readonly originCode: string;
   readonly destinationCode: string;
   readonly destinationName: string;
   readonly scope: 'domestic' | 'international';
@@ -177,6 +179,7 @@ function toView(record: AdminTicketRecord): AdminTicketView {
   const domestic = getLocationCountryCode(record.destinationCode) === DOMESTIC_COUNTRY_CODE;
   return {
     id: record.id,
+    originCode: record.originCode,
     destinationCode: record.destinationCode,
     destinationName: getLocationName(record.destinationCode) ?? record.destinationCode,
     scope: domestic ? 'domestic' : 'international',
@@ -236,7 +239,8 @@ export class AdminService {
       if (date.length > 0 && view.departureDate !== date) return false;
       if (returnDate.length > 0 && view.returnDate !== returnDate) return false;
       if (search.length === 0) return true;
-      return view.destinationName.toLocaleLowerCase('ru-RU').includes(search)
+      return view.originCode.toLocaleLowerCase('ru-RU').includes(search)
+        || view.destinationName.toLocaleLowerCase('ru-RU').includes(search)
         || view.destinationCode.toLocaleLowerCase('ru-RU').includes(search);
     });
 

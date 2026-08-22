@@ -15,6 +15,7 @@ const silentLogger: Logger = { info() {}, warn() {}, error() {} };
 
 const records: readonly AdminTicketRecord[] = [{
   id: 1,
+  originCode: 'TAS',
   destinationCode: 'IST',
   price: 2_000_000,
   currencyCode: 'UZS',

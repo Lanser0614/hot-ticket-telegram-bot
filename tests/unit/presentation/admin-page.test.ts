@@ -14,6 +14,7 @@ function dashboard(overrides: Partial<AdminDashboard> = {}): AdminDashboard {
     query: { scope: 'all', trip: 'all', date: '', returnDate: '', sort: 'city', direction: 'asc', search: '', page: 1 },
     rows: [{
       id: 1,
+      originCode: 'TAS',
       destinationCode: 'IST',
       destinationName: 'Стамбул',
       scope: 'international',
@@ -209,6 +210,15 @@ describe('renderAdminPage', () => {
   it('показывает flash-сообщение', () => {
     const html = renderAdminPage(dashboard(), 'Синхронизация запущена.');
     expect(html).toContain('Синхронизация запущена.');
+  });
+
+  it('показывает фактический origin маршрута, а не TAS по умолчанию', () => {
+    const html = renderAdminPage(dashboard({ rows: [{
+      ...dashboard().rows[0]!, originCode: 'NCU', destinationCode: 'ALA', destinationName: 'Алма-Ата'
+    }] }));
+
+    expect(html).toContain('NCU → ALA');
+    expect(html).not.toContain('TAS → ALA');
   });
 
   it('показывает пустое состояние', () => {

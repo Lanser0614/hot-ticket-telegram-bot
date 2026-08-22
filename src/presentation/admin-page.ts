@@ -101,7 +101,7 @@ function hasActiveFilters(query: AdminQuery): boolean {
 function ticketRow(view: AdminTicketView): string {
   const routeType = view.scope === 'domestic' ? 'Локальный' : 'Международный';
   return `<tr>
-    <td><div class="primary-cell">${escapeHtml(view.destinationName)}</div><div class="secondary-cell">TAS → ${escapeHtml(view.destinationCode)}</div></td>
+    <td><div class="primary-cell">${escapeHtml(view.destinationName)}</div><div class="secondary-cell">${escapeHtml(view.originCode)} → ${escapeHtml(view.destinationCode)}</div></td>
     <td><span class="status-badge neutral">${routeType}</span></td>
     <td class="numeric strong">${formatNumber(view.price)} <span class="currency">${escapeHtml(view.currencyCode)}</span></td>
     <td>${escapeHtml(view.departureDate)}</td>

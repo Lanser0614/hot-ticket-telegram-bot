@@ -54,6 +54,7 @@ function asStringArray(value: unknown): readonly string[] {
 function mapRecord(row: Row): AdminTicketRecord {
   return {
     id: asNumber(row.id),
+    originCode: asString(row.origin_code),
     destinationCode: asString(row.destination_code),
     price: asNumber(row.price),
     currencyCode: asString(row.currency_code),
@@ -141,7 +142,7 @@ export class SqliteAdminRepository implements AdminRepository {
 
   public async listActiveTickets(): Promise<readonly AdminTicketRecord[]> {
     const rows = await this.db.all(`
-      SELECT id, destination_code, price, currency_code, departure_date, return_date,
+      SELECT id, origin_code, destination_code, price, currency_code, departure_date, return_date,
              is_direct, trip_class, has_baggage, ticket_link
       FROM tickets WHERE is_active = 1
     `);

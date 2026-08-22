@@ -11,6 +11,7 @@ import {
 function record(overrides: Partial<AdminTicketRecord>): AdminTicketRecord {
   return {
     id: 1,
+    originCode: 'TAS',
     destinationCode: 'IST',
     price: 2_000_000,
     currencyCode: 'UZS',
@@ -138,6 +139,18 @@ describe('AdminService.getDashboard', () => {
 
     expect(dashboard.rows.map((row) => row.destinationCode)).toEqual(['SKD']);
     expect(dashboard.rows[0]?.scope).toBe('domestic');
+  });
+
+  it('сохраняет и ищет реальный origin маршрута', async () => {
+    const service = new AdminService(fakeRepository([
+      record({ id: 1, originCode: 'TAS', destinationCode: 'ALA' }),
+      record({ id: 2, originCode: 'NCU', destinationCode: 'ALA' })
+    ]));
+
+    const dashboard = await service.getDashboard(query({ search: 'NCU' }));
+
+    expect(dashboard.rows).toHaveLength(1);
+    expect(dashboard.rows[0]).toMatchObject({ originCode: 'NCU', destinationCode: 'ALA' });
   });
 
   it('сортирует по цене по возрастанию и убыванию', async () => {
