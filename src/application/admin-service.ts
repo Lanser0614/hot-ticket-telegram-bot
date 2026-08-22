@@ -8,6 +8,28 @@ export type AdminScope = 'all' | 'domestic' | 'international';
 export type AdminTripFilter = 'all' | 'round' | 'oneway';
 export type AdminSort = 'city' | 'price' | 'date';
 export type SortDirection = 'asc' | 'desc';
+export type AdminPricePeriod = 30 | 90 | 180 | 365;
+
+export interface AdminPriceAnalyticsQuery {
+  readonly destinationCode: string | null;
+  readonly originCode: string | null;
+  readonly periodDays: AdminPricePeriod;
+}
+
+export interface AdminRoutePriceSeries {
+  readonly originCode: string;
+  readonly destinationCode: string;
+  readonly tripClass: TripClass;
+  readonly observationDays: number;
+  readonly averagePrice: number;
+  readonly points: readonly { readonly day: string; readonly price: number }[];
+}
+
+export interface AdminPriceAnalytics {
+  readonly query: AdminPriceAnalyticsQuery;
+  readonly origins: readonly string[];
+  readonly series: readonly AdminRoutePriceSeries[];
+}
 
 export interface AdminTicketRecord {
   readonly id: number;
@@ -122,6 +144,7 @@ export interface AdminRepository {
   listActiveTickets(): Promise<readonly AdminTicketRecord[]>;
   listCachedDestinations(): Promise<readonly string[]>;
   getStats(): Promise<AdminStatsRecord>;
+  getPriceAnalytics(query: AdminPriceAnalyticsQuery): Promise<AdminPriceAnalytics>;
 }
 
 export interface AdminDestinationOption {
@@ -155,6 +178,9 @@ export interface AdminQuery {
   readonly direction: SortDirection;
   readonly search: string;
   readonly page: number;
+  readonly priceDestinationCode?: string | null;
+  readonly priceOriginCode?: string | null;
+  readonly pricePeriodDays?: AdminPricePeriod;
 }
 
 export interface AdminDashboard {
@@ -173,6 +199,7 @@ export interface AdminDashboard {
   };
   readonly destinations: readonly AdminDestinationOption[];
   readonly stats: AdminStatsRecord;
+  readonly priceAnalytics?: AdminPriceAnalytics;
 }
 
 function toView(record: AdminTicketRecord): AdminTicketView {
@@ -214,10 +241,16 @@ export class AdminService {
   ) {}
 
   public async getDashboard(query: AdminQuery): Promise<AdminDashboard> {
-    const [records, cachedDestinationCodes, stats] = await Promise.all([
+    const priceQuery: AdminPriceAnalyticsQuery = {
+      destinationCode: query.priceDestinationCode ?? null,
+      originCode: query.priceOriginCode ?? null,
+      periodDays: query.pricePeriodDays ?? 30
+    };
+    const [records, cachedDestinationCodes, stats, priceAnalytics] = await Promise.all([
       this.repository.listActiveTickets(),
       this.repository.listCachedDestinations(),
-      this.repository.getStats()
+      this.repository.getStats(),
+      this.repository.getPriceAnalytics(priceQuery)
     ]);
     const views = records.map(toView);
     const domestic = views.filter((view) => view.scope === 'domestic').length;
@@ -270,7 +303,8 @@ export class AdminService {
         oneWay: views.length - roundTrip
       },
       destinations,
-      stats
+      stats,
+      priceAnalytics
     };
   }
 }

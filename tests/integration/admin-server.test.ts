@@ -60,7 +60,8 @@ const repository: AdminRepository = {
       topRoutes30Days: []
     },
     lastSync: null
-  })
+  }),
+  getPriceAnalytics: (query) => Promise.resolve({ query, origins: ['TAS'], series: [] })
 };
 
 const servers: Array<{ close: (callback: () => void) => void }> = [];

@@ -61,7 +61,8 @@ function fakeRepository(records: readonly AdminTicketRecord[]): AdminRepository 
   return {
     listActiveTickets: () => Promise.resolve(records),
     listCachedDestinations: () => Promise.resolve(['IST', 'DXB', 'SKD']),
-    getStats: () => Promise.resolve(stats)
+    getStats: () => Promise.resolve(stats),
+    getPriceAnalytics: (priceQuery) => Promise.resolve({ query: priceQuery, origins: ['TAS'], series: [] })
   };
 }
 

@@ -11,6 +11,7 @@ import type {
   AdminService,
   AdminSort,
   AdminQuery,
+  AdminPricePeriod,
   AdminTripFilter,
   SortDirection
 } from '../../application/admin-service.js';
@@ -56,6 +57,18 @@ function parseDate(value: string): string {
   return /^\d{4}-\d{2}-\d{2}$/u.test(value) ? value : '';
 }
 
+function parseIata(value: string): string | null {
+  const code = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/u.test(code) ? code : null;
+}
+
+function parsePricePeriod(value: string): AdminPricePeriod {
+  if (value === '90') return 90;
+  if (value === '180') return 180;
+  if (value === '365') return 365;
+  return 30;
+}
+
 function parseQuery(request: Request): AdminQuery {
   return {
     scope: parseScope(firstValue(request.query.scope)),
@@ -65,7 +78,10 @@ function parseQuery(request: Request): AdminQuery {
     sort: parseSort(firstValue(request.query.sort)),
     direction: parseDirection(firstValue(request.query.dir)),
     search: firstValue(request.query.q).slice(0, 100),
-    page: parsePage(firstValue(request.query.page))
+    page: parsePage(firstValue(request.query.page)),
+    priceDestinationCode: parseIata(firstValue(request.query.priceDestination)),
+    priceOriginCode: parseIata(firstValue(request.query.priceOrigin)),
+    pricePeriodDays: parsePricePeriod(firstValue(request.query.pricePeriod))
   };
 }
 

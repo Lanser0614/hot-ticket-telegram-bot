@@ -2,6 +2,9 @@ import type {
   AdminClickPoint,
   AdminClickRouteRecord,
   AdminPricePoint,
+  AdminPriceAnalytics,
+  AdminPriceAnalyticsQuery,
+  AdminRoutePriceSeries,
   AdminRepository,
   AdminRoutePriceRecord,
   AdminStatsRecord,
@@ -156,6 +159,56 @@ export class SqliteAdminRepository implements AdminRepository {
       for (const code of asStringArray(row.destination_codes)) codes.add(code);
     }
     return [...codes].sort();
+  }
+
+  public async getPriceAnalytics(query: AdminPriceAnalyticsQuery): Promise<AdminPriceAnalytics> {
+    const parameters: Record<string, unknown> = {
+      ':dateFrom': `-${String(query.periodDays - 1)} days`,
+      ':destination': query.destinationCode,
+      ':origin': query.originCode
+    };
+    const condition = `day >= date('now', '+5 hours', :dateFrom)
+      AND (:destination IS NULL OR destination_code = :destination)
+      AND (:origin IS NULL OR origin_code = :origin)`;
+    const [rows, originRows] = await Promise.all([
+      this.db.all(`
+        WITH ranked_routes AS (
+          SELECT origin_code, destination_code, trip_class,
+                 count(*) AS observation_days, round(avg(avg_price)) AS average_price
+          FROM route_price_daily
+          WHERE ${condition}
+          GROUP BY origin_code, destination_code, trip_class
+          ORDER BY observation_days DESC, average_price ASC, origin_code ASC
+          LIMIT 12
+        )
+        SELECT d.origin_code, d.destination_code, d.trip_class, d.day, d.min_price,
+               r.observation_days, r.average_price
+        FROM route_price_daily d
+        JOIN ranked_routes r ON r.origin_code = d.origin_code
+          AND r.destination_code = d.destination_code AND r.trip_class = d.trip_class
+        WHERE ${condition.replaceAll('origin_code', 'd.origin_code').replaceAll('destination_code', 'd.destination_code').replace('day', 'd.day')}
+        ORDER BY d.origin_code ASC, d.destination_code ASC, d.trip_class ASC, d.day ASC
+      `, parameters),
+      this.db.all(`SELECT DISTINCT origin_code FROM route_price_daily WHERE ${condition} ORDER BY origin_code ASC`, parameters)
+    ]);
+    const series = new Map<string, { originCode: string; destinationCode: string; tripClass: TripClass; observationDays: number; averagePrice: number; points: { day: string; price: number }[] }>();
+    for (const row of rows) {
+      const originCode = asString(row.origin_code);
+      const destinationCode = asString(row.destination_code);
+      const tripClass = asTripClass(row.trip_class);
+      const key = `${originCode}|${destinationCode}|${tripClass}`;
+      const current = series.get(key) ?? {
+        originCode, destinationCode, tripClass,
+        observationDays: asNumber(row.observation_days), averagePrice: asNumber(row.average_price), points: []
+      };
+      current.points.push({ day: asString(row.day), price: asNumber(row.min_price) });
+      series.set(key, current);
+    }
+    return {
+      query,
+      origins: originRows.map((row) => asString(row.origin_code)),
+      series: [...series.values()] as readonly AdminRoutePriceSeries[]
+    };
   }
 
   public async getStats(): Promise<AdminStatsRecord> {
